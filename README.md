@@ -85,4 +85,25 @@ jane@example.com,Jane Smith
 
 ## Data Storage
 
-SQLite database at `data/store.json` stores contacts, campaigns, queue, and send logs.
+Contacts, campaigns, queue, and send logs are stored in `data/store.json`.
+
+## Deploying
+
+### Vercel (UI + API only — limited)
+
+Velox can run on Vercel for the web UI and API routes, but **bulk background sending does not work** on serverless (no persistent process or disk). Use Vercel for testing the UI, or prefer Railway/Render for production sending.
+
+1. Import the GitHub repo in [Vercel](https://vercel.com)
+2. Add environment variables from `.env.example` (SMTP credentials, `DAILY_LIMIT`, etc.)
+3. Deploy — `vercel.json` routes `/api/*` to the Express handler
+
+### Railway / Render (recommended for sending)
+
+Run as a normal Node server so the background sender and daily queue work:
+
+```bash
+npm install
+npm start
+```
+
+Set the same environment variables as local `.env`. Data persists on the server disk under `data/`.

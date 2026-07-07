@@ -7,6 +7,7 @@ const path = require('path');
 const fs = require('fs');
 const cron = require('node-cron');
 
+const { uploadsDir, attachmentsDir, isServerless } = require('./src/paths');
 const store = require('./src/store');
 const { getAccounts, getAccount, getAccountByList } = require('./src/accounts');
 const { validateCampaign, htmlToPlain } = require('./src/email-utils');
@@ -27,11 +28,6 @@ const {
 
 const app = express();
 const PORT = process.env.PORT || 3001;
-
-const uploadsDir = path.join(__dirname, 'uploads');
-const attachmentsDir = path.join(__dirname, 'attachments');
-if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
-if (!fs.existsSync(attachmentsDir)) fs.mkdirSync(attachmentsDir, { recursive: true });
 
 const upload = multer({ dest: uploadsDir, limits: { fileSize: 50 * 1024 * 1024 } });
 const attachmentUpload = multer({ dest: attachmentsDir, limits: { fileSize: 25 * 1024 * 1024 } });
@@ -485,29 +481,44 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-if (store.getPendingCount() > 0) {
-  const hasQuota = getAccounts().some(a => store.getRemainingToday(a.dailyLimit, a.id) > 0);
-  if (hasQuota) {
-    store.setMeta({ userStoppedSender: false });
-    startSender();
-  } else {
-    const p = store.getQueueProgress();
-    console.log(`Queue: ${p.pending.toLocaleString()} pending. Daily limits reached — resumes tomorrow.`);
+app.use((err, req, res, next) => {
+  console.error('Request error:', err);
+  if (res.headersSent) return next(err);
+  res.status(500).json({ error: err.message || 'Internal server error' });
+});
+
+function startBackgroundJobs() {
+  if (store.getPendingCount() > 0) {
+    const hasQuota = getAccounts().some(a => store.getRemainingToday(a.dailyLimit, a.id) > 0);
+    if (hasQuota) {
+      store.setMeta({ userStoppedSender: false });
+      startSender();
+    } else {
+      const p = store.getQueueProgress();
+      console.log(`Queue: ${p.pending.toLocaleString()} pending. Daily limits reached — resumes tomorrow.`);
+    }
   }
+
+  cron.schedule('0 0 * * *', () => {
+    resetDailyState();
+    store.setMeta({ userStoppedSender: false });
+    const pending = store.getPendingCount();
+    console.log(`New day — limits reset. ${pending.toLocaleString()} emails in queue.`);
+    if (pending > 0) startSender();
+  });
 }
 
-cron.schedule('0 0 * * *', () => {
-  resetDailyState();
-  store.setMeta({ userStoppedSender: false });
-  const pending = store.getPendingCount();
-  console.log(`New day — limits reset. ${pending.toLocaleString()} emails in queue.`);
-  if (pending > 0) startSender();
-});
+if (!isServerless) {
+  startBackgroundJobs();
+  app.listen(PORT, () => {
+    const accounts = getAccountStatuses();
+    console.log(`Velox running at http://localhost:${PORT}`);
+    for (const a of accounts) {
+      console.log(`  ${a.label}: ${a.email} | ${a.todaySent}/${a.dailyLimit} today | ${a.protected ? 'PROTECTED' : 'standard'}`);
+    }
+  });
+} else {
+  console.log('Velox running in serverless mode (background sender disabled)');
+}
 
-app.listen(PORT, () => {
-  const accounts = getAccountStatuses();
-  console.log(`Velox running at http://localhost:${PORT}`);
-  for (const a of accounts) {
-    console.log(`  ${a.label}: ${a.email} | ${a.todaySent}/${a.dailyLimit} today | ${a.protected ? 'PROTECTED' : 'standard'}`);
-  }
-});
+module.exports = app;

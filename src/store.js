@@ -1,10 +1,8 @@
 const fs = require('fs');
 const path = require('path');
+const { dataDir } = require('./paths');
 
-const dataDir = path.join(__dirname, '..', 'data');
 const dbPath = path.join(dataDir, 'store.json');
-
-if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
 const empty = () => ({
   contacts: [],
