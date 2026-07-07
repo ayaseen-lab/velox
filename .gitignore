@@ -1,0 +1,7 @@
+node_modules/
+.env
+data/*.db
+data/store.json
+uploads/
+attachments/
+*.log

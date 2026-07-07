@@ -1,0 +1,19 @@
+{
+  "name": "bulk-mail-sender",
+  "version": "1.0.0",
+  "description": "Web-based bulk email sender with 490 emails/day limit",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "csv-parse": "^5.6.0",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "multer": "^1.4.5-lts.1",
+    "node-cron": "^3.0.3",
+    "nodemailer": "^6.9.16",
+    "xlsx": "^0.18.5"
+  }
+}

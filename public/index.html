@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bulk Mail Sender</title>
+  <link href="https://cdn.quilljs.com/1.3.7/quill.snow.css" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css?v=3">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="logo">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+          <polyline points="22,6 12,13 2,6"/>
+        </svg>
+        <span>Bulk Mail</span>
+      </div>
+      <nav>
+        <a href="#" class="nav-link active" data-page="dashboard">
+          <span class="icon">📊</span><span class="nav-label">Dashboard</span>
+        </a>
+        <a href="#" class="nav-link" data-page="compose">
+          <span class="icon">✉️</span><span class="nav-label">Compose</span>
+        </a>
+        <a href="#" class="nav-link" data-page="contacts">
+          <span class="icon">👥</span><span class="nav-label">Contacts</span>
+        </a>
+        <a href="#" class="nav-link" data-page="campaigns">
+          <span class="icon">📋</span><span class="nav-label">Campaigns</span>
+        </a>
+        <a href="#" class="nav-link" data-page="settings">
+          <span class="icon">⚙️</span><span class="nav-label">Settings</span>
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <div id="accountQuotas"></div>
+      </div>
+    </aside>
+
+    <main class="content">
+      <!-- Dashboard -->
+      <section id="page-dashboard" class="page active">
+        <header class="page-header">
+          <h1>Campaign Monitor</h1>
+          <div class="header-actions">
+            <span class="live-dot hidden" id="liveDot"></span>
+            <span class="badge" id="senderBadge">Idle</span>
+            <button class="btn btn-sm" id="toggleSender">Start Sender</button>
+          </div>
+        </header>
+
+        <div id="dashboardAlerts"></div>
+
+        <div class="account-cards" id="accountCards"></div>
+
+        <div class="card test-panel-card" id="dashboardTestPanel">
+          <h2>Test Email During Campaign</h2>
+          <p class="hint">Send a test anytime while the campaign is running. Uses the active campaign email content.</p>
+          <div class="test-mode-tabs">
+            <button type="button" class="list-tab active" data-test-panel="dashboard" data-test-mode="quick">Quick Test</button>
+            <button type="button" class="list-tab" data-test-panel="dashboard" data-test-mode="manual">Manual Test</button>
+          </div>
+          <p class="hint" id="dashQuickTestHint">Uses default sample contact (Alex Morgan, VP Engineering at Example Technologies).</p>
+          <div id="dashManualTestFields" class="manual-test-fields hidden">
+            <div class="form-row">
+              <div class="form-group"><label>First Name *</label><input type="text" id="dashTestFirstName" placeholder="Alex"></div>
+              <div class="form-group"><label>Last Name</label><input type="text" id="dashTestLastName" placeholder="Morgan"></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label>Job Title *</label><input type="text" id="dashTestTitle" placeholder="VP of Engineering"></div>
+              <div class="form-group"><label>Company *</label><input type="text" id="dashTestCompany" placeholder="Example Technologies"></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label>City *</label><input type="text" id="dashTestCity" placeholder="San Francisco"></div>
+              <div class="form-group"><label>Industry</label><input type="text" id="dashTestIndustry" placeholder="Information Technology"></div>
+            </div>
+            <div class="form-group"><label>Company Profile (for AI closing line)</label><textarea id="dashTestCompanyProfile" rows="2" placeholder="What the company builds..."></textarea></div>
+            <div class="form-group"><label>Send Test To</label><input type="email" id="dashTestTo" placeholder="ahmadjutt463@gmail.com"></div>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="btn btn-primary" id="dashSendTestEmail">Send Test Email</button>
+            <button type="button" class="btn btn-sm" id="dashPreviewTest">Preview with These Fields</button>
+          </div>
+        </div>
+
+        <div class="card progress-card hidden" id="queueProgressCard">
+          <h2>Campaign Progress</h2>
+          <p class="hint" id="parallelHint">Both Gmail accounts can run campaigns in parallel — one campaign per account.</p>
+          <div class="progress-stats">
+            <span><strong id="progressSent">0</strong> sent</span>
+            <span><strong id="progressPending">0</strong> remaining</span>
+            <span><strong id="progressTotal">0</strong> total</span>
+            <span><strong id="progressPercent">0%</strong> done</span>
+          </div>
+          <div class="quota-bar progress-bar-lg">
+            <div class="quota-fill" id="campaignProgressFill"></div>
+          </div>
+          <p class="progress-detail" id="progressDetail"></p>
+          <p class="hint" id="progressEstimate"></p>
+          <div id="activeCampaignsList" class="active-campaigns-list"></div>
+          <div class="form-actions campaign-progress-actions hidden" id="campaignProgressActions"></div>
+        </div>
+
+        <div class="stats-grid stats-grid-6">
+          <div class="stat-card stat-sent">
+            <div class="stat-value" id="statTotalSent">0</div>
+            <div class="stat-label">Total Sent</div>
+          </div>
+          <div class="stat-card stat-failed">
+            <div class="stat-value" id="statTotalFailed">0</div>
+            <div class="stat-label">Failed / Denied</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="statPending">0</div>
+            <div class="stat-label">Pending Queue</div>
+          </div>
+          <div class="stat-card stat-success">
+            <div class="stat-value" id="statSuccessRate">0%</div>
+            <div class="stat-label">Success Rate</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="statTodaySent">0</div>
+            <div class="stat-label">Sent Today</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="statReplies">0</div>
+            <div class="stat-label">Replies Logged</div>
+          </div>
+        </div>
+
+        <div class="charts-grid">
+          <div class="card chart-card">
+            <h2>Campaign Status</h2>
+            <div class="chart-wrap"><canvas id="chartStatus"></canvas></div>
+          </div>
+          <div class="card chart-card">
+            <h2>Daily Sends (14 days)</h2>
+            <div class="chart-wrap"><canvas id="chartDaily"></canvas></div>
+          </div>
+          <div class="card chart-card">
+            <h2>Today's Activity (hourly)</h2>
+            <div class="chart-wrap"><canvas id="chartHourly"></canvas></div>
+          </div>
+          <div class="card chart-card">
+            <h2>Failure Breakdown</h2>
+            <div class="chart-wrap"><canvas id="chartFailures"></canvas></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Active Campaigns</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Campaign</th>
+                  <th>Account</th>
+                  <th>List</th>
+                  <th>Subject</th>
+                  <th>Status</th>
+                  <th>Sent</th>
+                  <th>Failed</th>
+                  <th>Pending</th>
+                  <th>Success %</th>
+                  <th>Progress</th>
+                </tr>
+              </thead>
+              <tbody id="campaignStatsTable"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Top Failure Reasons</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Count</th>
+                  <th>Error</th>
+                </tr>
+              </thead>
+              <tbody id="failureReasonsTable"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Live Activity Feed</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Email</th>
+                  <th>Status</th>
+                  <th>Details</th>
+                </tr>
+              </thead>
+              <tbody id="recentLogs"></tbody>
+            </table>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- Compose -->
+      <section id="page-compose" class="page">
+        <header class="page-header">
+          <h1>Compose Campaign</h1>
+        </header>
+
+        <div class="card edit-banner hidden" id="editCampaignBanner">
+          <div class="edit-banner-row">
+            <div>
+              <strong id="editCampaignTitle">Editing paused campaign</strong>
+              <p class="hint" id="editCampaignHint">Changes apply to all remaining emails in the queue when you resume.</p>
+            </div>
+            <div class="edit-banner-actions">
+              <button type="button" class="btn btn-sm" id="cancelEditCampaign">Cancel</button>
+              <button type="button" class="btn btn-sm btn-primary" id="saveCampaignEdits">Save Changes</button>
+              <button type="button" class="btn btn-sm btn-success" id="saveAndResumeCampaign">Save &amp; Resume</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card quickstart-card">
+          <h2>3-Step Campaign</h2>
+          <ol class="quickstart-steps">
+            <li id="step1"><strong>Select email account</strong> — choose which Gmail sends</li>
+            <li id="step2"><strong>Upload data file</strong> — Contacts tab → pick List 1 or List 2</li>
+            <li id="step3"><strong>Preview → Test → Send</strong> — check preview, test, then launch (both accounts can send at once)</li>
+          </ol>
+        </div>
+
+        <div class="compose-layout">
+          <div class="compose-main">
+            <div class="card account-picker-card">
+              <div class="form-group" style="margin-bottom:0">
+                <label>Send From (Gmail Account)</label>
+                <select id="smtpAccountSelect" class="select-input"></select>
+                <p class="hint" id="accountHint">Protected accounts use slower sends and lower daily limits.</p>
+              </div>
+            </div>
+
+            <div class="gmail-compose">
+              <div class="compose-header">
+                <span class="compose-title">Campaign Email</span>
+                <div class="compose-header-actions">
+                  <button type="button" class="btn btn-sm btn-primary" id="loadDefaultEmail">Load Default Email</button>
+                  <button type="button" class="btn btn-sm" id="refreshPreview">Refresh Preview</button>
+                  <span class="compose-meta" id="composeContactCount">0 recipients</span>
+                </div>
+              </div>
+
+              <form id="composeForm">
+                <input type="hidden" id="campaignName">
+
+                <div class="compose-field">
+                  <label>From</label>
+                  <span class="field-value" id="composeFrom">—</span>
+                </div>
+
+                <div class="compose-field">
+                  <label>To</label>
+                  <span class="field-value" id="composeTo">Select account first</span>
+                </div>
+
+                <div class="compose-field compose-input">
+                  <label>Subject</label>
+                  <input type="text" id="campaignSubject" placeholder="Subject" required>
+                </div>
+
+                <div class="compose-field compose-input">
+                  <label>Inbox</label>
+                  <input type="text" id="campaignPreheader" placeholder="Preview text shown in inbox (optional)">
+                </div>
+
+                <div id="emailEditor"></div>
+
+                <div class="deliverability-panel" id="deliverabilityPanel">
+                  <div class="deliverability-score">
+                    <span class="score-label">Deliverability</span>
+                    <span class="score-badge good" id="deliverabilityBadge">Good</span>
+                  </div>
+                  <ul class="deliverability-warnings" id="deliverabilityWarnings"></ul>
+                </div>
+
+                <div class="compose-attachment">
+                  <label class="attach-btn">
+                    📎 Attach Resume (required for campaign)
+                    <input type="file" id="campaignAttachment" accept=".pdf,.doc,.docx" hidden>
+                  </label>
+                  <span class="hint" id="attachmentName">PDF or Word — max 25 MB</span>
+                </div>
+
+                <div class="compose-options">
+                  <label class="checkbox-label">
+                    <input type="checkbox" id="includeUnsubscribe">
+                    <span>Add unsubscribe footer (not recommended for 1-to-1 outreach — can hurt inbox placement)</span>
+                  </label>
+                </div>
+
+                <div class="compose-footer">
+                  <button type="button" class="btn btn-success btn-send" id="saveAndSend">▶ Send Campaign</button>
+                </div>
+              </form>
+            </div>
+
+            <div class="card test-panel-card">
+              <h2>Test Email</h2>
+              <p class="hint">Works before or during a campaign. Campaign keeps sending while you test.</p>
+              <div class="test-mode-tabs">
+                <button type="button" class="list-tab active" data-test-panel="compose" data-test-mode="quick">Quick Test</button>
+                <button type="button" class="list-tab" data-test-panel="compose" data-test-mode="manual">Manual Test</button>
+              </div>
+              <p class="hint" id="composeQuickTestHint">Uses sample: Alex Morgan, VP Engineering at Example Technologies.</p>
+              <div id="composeManualTestFields" class="manual-test-fields hidden">
+                <div class="form-row">
+                  <div class="form-group"><label>First Name *</label><input type="text" id="testFirstName" placeholder="Alex"></div>
+                  <div class="form-group"><label>Last Name</label><input type="text" id="testLastName" placeholder="Morgan"></div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group"><label>Job Title *</label><input type="text" id="testTitle" placeholder="VP of Engineering"></div>
+                  <div class="form-group"><label>Company *</label><input type="text" id="testCompany" placeholder="Example Technologies"></div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group"><label>City *</label><input type="text" id="testCity" placeholder="San Francisco"></div>
+                  <div class="form-group"><label>Industry</label><input type="text" id="testIndustry" placeholder="Information Technology"></div>
+                </div>
+                <div class="form-group"><label>Company Profile (for AI closing line)</label><textarea id="testCompanyProfile" rows="2" placeholder="What the company builds..."></textarea></div>
+                <div class="form-group"><label>Send Test To</label><input type="email" id="testTo" placeholder="ahmadjutt463@gmail.com"></div>
+              </div>
+              <div class="form-actions">
+                <button type="button" class="btn btn-primary" id="sendTestEmail">Send Test Email</button>
+                <button type="button" class="btn btn-sm" id="previewManualTest">Preview with These Fields</button>
+              </div>
+              <p class="test-email-hint">Sends from selected Gmail account (default: <strong>ahmadrandhawa01@gmail.com</strong>)</p>
+            </div>
+          </div>
+
+          <div class="compose-preview-panel">
+            <div class="card preview-card">
+              <h2>Email Preview</h2>
+              <p class="hint">Each recipient gets a unique opening line based on their title, company, and industry</p>
+              <div class="preview-inbox">
+                <div class="preview-inbox-row"><span class="preview-label">From</span><span id="previewFrom">—</span></div>
+                <div class="preview-inbox-row"><span class="preview-label">To</span><span id="previewTo">alex@example.com</span></div>
+                <div class="preview-inbox-row"><span class="preview-label">Subject</span><strong id="previewSubject">—</strong></div>
+              </div>
+              <div class="preview-body-wrap">
+                <iframe id="previewFrame" class="preview-frame" title="Email preview"></iframe>
+              </div>
+              <details class="preview-plain">
+                <summary>Plain text version</summary>
+                <pre id="previewPlain"></pre>
+              </details>
+            </div>
+          </div>
+        </div>
+
+        <div class="card tips-card">
+          <h2>Protection & Safety</h2>
+          <ul class="tips-list">
+            <li><strong>No repeat sends</strong> — already-sent addresses are automatically skipped</li>
+            <li><strong>Bounced/blocked</strong> — "address not found" and "message blocked" are marked as failed permanently</li>
+            <li><strong>Protected account</strong> — ahmadrandhawa01@gmail.com limited to 490/day (10 below Gmail max), 8s delay</li>
+            <li>Blocked messages pause sending for 2 hours on protected accounts</li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- Contacts -->
+      <section id="page-contacts" class="page">
+        <header class="page-header">
+          <h1>Contact Lists</h1>
+        </header>
+
+        <div class="list-tabs" id="listTabs"></div>
+
+        <div class="card list-summary" id="listSummary"></div>
+
+        <div class="card">
+          <div class="toolbar">
+            <input type="text" id="contactSearch" placeholder="Search contacts..." class="search-input">
+            <label class="btn btn-primary file-btn" id="uploadBtnLabel">
+              Upload to List
+              <input type="file" id="csvUpload" accept=".csv,.xlsx,.xls" hidden>
+            </label>
+            <button class="btn" id="addContactBtn">+ Add Contact</button>
+            <button class="btn btn-danger btn-sm" id="clearContacts">Clear List</button>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Email</th>
+                  <th>Name</th>
+                  <th>Title</th>
+                  <th>Company</th>
+                  <th>Status</th>
+                  <th>Reason</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="contactsTable"></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="contactsPagination"></div>
+        </div>
+      </section>
+
+      <!-- Campaigns -->
+      <section id="page-campaigns" class="page">
+        <header class="page-header">
+          <h1>Campaigns</h1>
+        </header>
+        <div class="card">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Account</th>
+                  <th>List</th>
+                  <th>Subject</th>
+                  <th>Status</th>
+                  <th>Sent</th>
+                  <th>Failed</th>
+                  <th>Total</th>
+                  <th>Created</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="campaignsTable"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Settings -->
+      <section id="page-settings" class="page">
+        <header class="page-header">
+          <h1>Settings</h1>
+        </header>
+
+        <div id="settingsAccounts"></div>
+
+        <div class="card">
+          <h2>Safety Features</h2>
+          <ul class="tips-list">
+            <li><strong>Duplicate prevention</strong> — won't send to same email twice on a list</li>
+            <li><strong>Bounce handling</strong> — "address not found" → marked bounced, skipped forever</li>
+            <li><strong>Block handling</strong> — "message blocked/rejected" → marked blocked, sender pauses</li>
+            <li><strong>Protected account</strong> — lower limits, longer delays, extended pause on blocks</li>
+            <li>Auto-resume queue at midnight when daily limits reset</li>
+          </ul>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Add Contact Modal -->
+  <div class="modal hidden" id="addContactModal">
+    <div class="modal-content">
+      <h2>Add Contact</h2>
+      <form id="addContactForm">
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" id="newContactEmail" required>
+        </div>
+        <div class="form-group">
+          <label>Name</label>
+          <input type="text" id="newContactName">
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn" id="closeModal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Add</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="toast-container" id="toasts"></div>
+
+  <script src="https://cdn.quilljs.com/1.3.7/quill.min.js"></script>
+  <script src="/js/app.js?v=14"></script>
+</body>
+</html>
