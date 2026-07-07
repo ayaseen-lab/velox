@@ -1,4 +1,4 @@
-# Bulk Mail Sender
+# Velox
 
 Web-based bulk email interface with a **490 emails/day** limit. Upload contacts, compose campaigns, and send automatically with rate limiting and daily quota tracking.
 
@@ -81,7 +81,7 @@ jane@example.com,Jane Smith
 | `SMTP_USER` | — | SMTP username |
 | `SMTP_PASS` | — | SMTP password |
 | `SMTP_FROM` | — | From email address |
-| `SMTP_FROM_NAME` | Bulk Mail Sender | From display name |
+| `SMTP_FROM_NAME` | Velox | From display name |
 
 ## Data Storage
 

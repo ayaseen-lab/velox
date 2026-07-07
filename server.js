@@ -506,7 +506,7 @@ cron.schedule('0 0 * * *', () => {
 
 app.listen(PORT, () => {
   const accounts = getAccountStatuses();
-  console.log(`Bulk Mail Sender running at http://localhost:${PORT}`);
+  console.log(`Velox running at http://localhost:${PORT}`);
   for (const a of accounts) {
     console.log(`  ${a.label}: ${a.email} | ${a.todaySent}/${a.dailyLimit} today | ${a.protected ? 'PROTECTED' : 'standard'}`);
   }
