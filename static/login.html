@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Reachly — Sign in</title>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=5">
+  <link rel="stylesheet" href="/css/style.css?v=6">
   <style>
     body {
       min-height: 100vh;
@@ -103,6 +103,17 @@
       opacity: 0.7;
       cursor: wait;
     }
+
+    .login-hint {
+      margin-top: 16px;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      text-align: center;
+    }
+
+    .hidden {
+      display: none !important;
+    }
   </style>
 </head>
 <body>
@@ -114,29 +125,98 @@
       </svg>
       <span>Reachly</span>
     </div>
-    <p class="login-subtitle">Enter the dashboard password to continue.</p>
+    <p class="login-subtitle" id="loginSubtitle">Sign in to continue.</p>
 
     <div id="loginError" class="login-error"></div>
 
     <form id="loginForm">
+      <div class="login-field hidden" id="emailField">
+        <label for="email">Email</label>
+        <input id="email" type="email" placeholder="you@company.com" autocomplete="email">
+      </div>
       <div class="login-field">
         <label for="password">Password</label>
         <input id="password" type="password" placeholder="Enter password" autocomplete="current-password" required autofocus>
       </div>
       <button class="login-btn" id="loginBtn" type="submit">Sign in</button>
     </form>
+
+    <p class="login-hint" id="loginHint"></p>
   </div>
 
   <script>
     const form = document.getElementById('loginForm');
+    const emailInput = document.getElementById('email');
     const passwordInput = document.getElementById('password');
     const loginBtn = document.getElementById('loginBtn');
     const loginError = document.getElementById('loginError');
+    const emailField = document.getElementById('emailField');
+    const loginSubtitle = document.getElementById('loginSubtitle');
+    const loginHint = document.getElementById('loginHint');
+
+    let authMode = 'password';
+    let supabaseUrl = '';
+    let supabaseAnonKey = '';
+
+    async function apiFetch(path, options = {}) {
+      const res = await fetch(path, {
+        credentials: 'same-origin',
+        ...options,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || data.error_description || data.message || 'Request failed');
+      return data;
+    }
+
+    async function loadAuthConfig() {
+      const config = await apiFetch('/api/auth/config');
+      authMode = config.mode || 'password';
+
+      if (authMode === 'supabase') {
+        supabaseUrl = config.supabaseUrl;
+        supabaseAnonKey = config.supabaseAnonKey;
+        emailField.classList.remove('hidden');
+        emailInput.required = true;
+        emailInput.value = config.adminEmail || '';
+        loginSubtitle.textContent = 'Sign in with your Reachly account.';
+        loginHint.textContent = 'Supabase login enabled. Dashboard password 8888 still works as backup.';
+      } else {
+        loginSubtitle.textContent = 'Enter the dashboard password to continue.';
+        loginHint.textContent = 'Local dashboard password login.';
+      }
+    }
 
     async function checkSession() {
-      const res = await fetch('/api/auth/status');
-      const data = await res.json();
+      const data = await apiFetch('/api/auth/status');
       if (data.authenticated) window.location.href = '/';
+    }
+
+    async function loginWithSupabase(email, password) {
+      const res = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
+        method: 'POST',
+        headers: {
+          apikey: supabaseAnonKey,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error_description || data.msg || data.error || 'Supabase login failed');
+      }
+      await apiFetch('/api/auth/supabase', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ access_token: data.access_token }),
+      });
+    }
+
+    async function loginWithPassword(password) {
+      await apiFetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      });
     }
 
     form.addEventListener('submit', async (e) => {
@@ -146,26 +226,32 @@
       loginBtn.textContent = 'Signing in...';
 
       try {
-        const res = await fetch('/api/auth/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ password: passwordInput.value }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Invalid password');
+        if (authMode === 'supabase') {
+          try {
+            await loginWithSupabase(emailInput.value.trim(), passwordInput.value);
+          } catch (supabaseErr) {
+            await loginWithPassword(passwordInput.value);
+          }
+        } else {
+          await loginWithPassword(passwordInput.value);
+        }
         window.location.href = '/';
       } catch (err) {
-        loginError.textContent = err.message || 'Invalid password';
+        loginError.textContent = err.message || 'Login failed';
         loginError.classList.add('visible');
         passwordInput.focus();
-        passwordInput.select();
       } finally {
         loginBtn.disabled = false;
         loginBtn.textContent = 'Sign in';
       }
     });
 
-    checkSession();
+    loadAuthConfig()
+      .then(() => checkSession())
+      .catch((err) => {
+        loginError.textContent = err.message || 'Could not load login configuration';
+        loginError.classList.add('visible');
+      });
   </script>
 </body>
 </html>

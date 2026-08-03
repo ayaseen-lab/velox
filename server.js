@@ -30,7 +30,8 @@ const {
 const { getProviders, getProvider } = require('./src/email-providers');
 const { getLeadProviders, searchLeads } = require('./src/lead-providers');
 const { getDataVariables } = require('./src/variables');
-const { requireAuth, isAuthenticated, setAuthCookie, clearAuthCookie, verifyPassword } = require('./src/auth');
+const { requireAuth, isAuthenticated, setPasswordCookie, setSupabaseCookie, clearAuthCookies, verifyPassword } = require('./src/auth');
+const { getPublicAuthConfig, verifySupabaseAccessToken } = require('./src/supabase');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -56,8 +57,12 @@ app.get('/login', (req, res) => {
   res.sendFile(path.join(__dirname, 'static', 'login.html'));
 });
 
-app.get('/api/auth/status', (req, res) => {
-  res.json({ authenticated: isAuthenticated(req) });
+app.get('/api/auth/config', (req, res) => {
+  res.json(getPublicAuthConfig());
+});
+
+app.get('/api/auth/status', async (req, res) => {
+  res.json({ authenticated: await isAuthenticated(req) });
 });
 
 app.post('/api/auth/login', (req, res) => {
@@ -65,12 +70,27 @@ app.post('/api/auth/login', (req, res) => {
   if (!verifyPassword(password)) {
     return res.status(401).json({ error: 'Invalid password' });
   }
-  setAuthCookie(res);
+  setPasswordCookie(res);
   res.json({ success: true });
 });
 
+app.post('/api/auth/supabase', async (req, res) => {
+  const { access_token } = req.body || {};
+  if (!access_token) {
+    return res.status(400).json({ error: 'Missing access token' });
+  }
+
+  const user = await verifySupabaseAccessToken(access_token);
+  if (!user) {
+    return res.status(401).json({ error: 'Invalid Supabase session' });
+  }
+
+  setSupabaseCookie(res, access_token);
+  res.json({ success: true, email: user.email });
+});
+
 app.post('/api/auth/logout', (req, res) => {
-  clearAuthCookie(res);
+  clearAuthCookies(res);
   res.json({ success: true });
 });
 

@@ -84,6 +84,7 @@ function toast(message, type = 'success') {
 
 async function api(path, options = {}) {
   const res = await fetch(API + path, {
+    credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json', ...options.headers },
     ...options,
   });
@@ -754,7 +755,7 @@ async function sendTestFromPanel(source) {
     const attach = document.getElementById('campaignAttachment')?.files[0];
     if (attach) formData.append('attachment', attach);
 
-    const res = await fetch('/api/campaigns/test-email', { method: 'POST', body: formData });
+    const res = await fetch('/api/campaigns/test-email', { method: 'POST', body: formData, credentials: 'same-origin' });
     const result = await res.json();
     if (!res.ok) throw new Error(result.message || result.error);
     toast(result.message);
@@ -951,7 +952,7 @@ async function saveCampaign(andSend) {
   const formData = buildFormData({ ...data, name });
 
   try {
-    const res = await fetch('/api/campaigns', { method: 'POST', body: formData });
+    const res = await fetch('/api/campaigns', { method: 'POST', body: formData, credentials: 'same-origin' });
     const campaign = await res.json();
     if (!res.ok) throw new Error(campaign.error || 'Failed to save campaign');
 
@@ -1064,7 +1065,7 @@ document.getElementById('csvUpload').addEventListener('change', async (e) => {
   formData.append('list_id', selectedListId);
 
   try {
-    const res = await fetch('/api/contacts/upload', { method: 'POST', body: formData });
+    const res = await fetch('/api/contacts/upload', { method: 'POST', body: formData, credentials: 'same-origin' });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error);
     toast(`Added ${data.added.toLocaleString()} to ${data.listLabel || selectedListId} (${data.skipped} duplicates skipped)`);
@@ -1288,7 +1289,7 @@ async function saveCampaignEdits(andResume = false) {
   if (data.attachmentFile) formData.append('attachment', data.attachmentFile);
 
   try {
-    const res = await fetch(`/api/campaigns/${editingCampaignId}`, { method: 'PUT', body: formData });
+    const res = await fetch(`/api/campaigns/${editingCampaignId}`, { method: 'PUT', body: formData, credentials: 'same-origin' });
     const result = await res.json();
     if (!res.ok) throw new Error(result.error || 'Failed to update campaign');
 
