@@ -132,6 +132,7 @@ function renderAccountCards(accounts) {
     else if (a.running) { badge = 'running'; badgeText = 'Running'; }
     else if (a.blocked) { badge = 'danger'; badgeText = 'Blocked'; }
     else if (a.dailyQuotaHit) { badge = 'warning'; badgeText = 'Daily limit'; }
+    else if (a.warmup) { badge = 'protected'; badgeText = `Warmup ${a.warmup.day}/${a.warmup.totalDays}`; }
     else if (a.protected) { badge = 'protected'; badgeText = 'Protected'; }
 
     const pct = a.dailyLimit > 0 ? Math.round((a.todaySent / a.dailyLimit) * 100) : 0;
@@ -148,7 +149,7 @@ function renderAccountCards(accounts) {
       </div>
       <div class="quota-bar" style="margin:8px 0"><div class="quota-fill" style="width:${pct}%"></div></div>
       <div style="font-size:0.85rem;color:var(--text-muted)">
-        <strong>${a.todaySent}/${a.dailyLimit}</strong> today · ${a.remainingToday} left · ${a.sendDelayMs / 1000}s delay · ${escapeHtml(a.listLabel)}${a.pendingQueue ? ` · ${a.pendingQueue.toLocaleString()} queued` : ''}
+        <strong>${a.todaySent}/${a.dailyLimit}</strong> today · ${a.remainingToday} left · ${a.sendDelayMs / 1000}s delay · ${escapeHtml(a.listLabel)}${a.pendingQueue ? ` · ${a.pendingQueue.toLocaleString()} queued` : ''}${a.warmup ? ` · warmup day ${a.warmup.day}/${a.warmup.totalDays}` : ''}
       </div>
       ${statusLine}
       <div class="account-card-actions">
@@ -1412,6 +1413,7 @@ async function loadSettings() {
           ${a.pendingQueue ? `<li><strong>${a.pendingQueue.toLocaleString()}</strong> emails queued</li>` : ''}
           ${a.paused && a.pauseReason ? `<li class="warning-text">${escapeHtml(a.pauseReason)}${a.pausedUntil ? ` — resumes ${formatDate(a.pausedUntil)}` : ''}</li>` : ''}
           ${a.protected ? '<li>🛡 <strong>Protected mode</strong> — extended pauses on blocks</li>' : ''}
+          ${a.warmup ? `<li>🔥 <strong>Warmup day ${a.warmup.day}/${a.warmup.totalDays}</strong> — ${a.warmup.dailyLimit}/day, ~${Math.round(a.warmup.delayMs / 60000)} min between sends, ${escapeHtml(a.warmup.windowLabel)}</li>` : ''}
         </ul>
         <div class="form-group" style="margin-top:12px;max-width:220px">
           <label for="dailyLimit-${a.id}">Daily send limit</label>

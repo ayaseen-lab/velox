@@ -2,8 +2,9 @@ const nodemailer = require('nodemailer');
 const fs = require('fs');
 const crypto = require('crypto');
 const store = require('./store');
-const { getAccounts, getAccount, getDefaultAccount } = require('./accounts');
+const { getAccounts, getAccount, getDefaultAccount, resetAccountsCache } = require('./accounts');
 const { saveCopyToSent } = require('./save-to-sent');
+const { getWarmupPlan, jitterDelay } = require('./warmup');
 const { htmlToPlain, wrapHtmlEmail, classifySmtpError } = require('./email-utils');
 const {
   generatePersonalizedOpener,
@@ -235,6 +236,9 @@ function accountCanSend(accountId) {
 
   if (state.dailyQuotaHit && state.quotaHitDate === today) return false;
 
+  const warmup = getWarmupPlan(accountId);
+  if (warmup?.enabled && !warmup.inSendWindow) return false;
+
   const remaining = store.getRemainingToday(acc.dailyLimit, accountId);
   if (remaining <= 0) {
     markAccountDailyQuotaHit(accountId);
@@ -266,7 +270,8 @@ async function sendOneEmail(campaign, contact, accountId) {
     },
   };
 
-  if (campaign.include_unsubscribe === true) {
+  const acc = getAccount(accountId);
+  if (campaign.include_unsubscribe === true || acc?.warmup) {
     mailOptions.headers['List-Unsubscribe'] = `<mailto:${cfg.from}?subject=unsubscribe>`;
     mailOptions.headers['List-Unsubscribe-Post'] = 'List-Unsubscribe=One-Click';
   }
@@ -436,17 +441,34 @@ function scheduleAccountSender(accountId) {
 
     if (!accountTimers[accountId]) return;
 
+    const live = getAccount(accountId);
     const pending = store.getPendingCount(accountId);
-    if (pending === 0 || !accountCanSend(accountId)) {
+    if (pending === 0) {
       stopAccountSender(accountId);
       if (store.getPendingCount() === 0) store.updateCampaignStatuses();
       return;
     }
 
     const state = initAccountState(accountId);
-    let delay = Number.isFinite(acc?.sendDelayMs) ? acc.sendDelayMs : 0;
+    const warmup = getWarmupPlan(accountId);
+    let delay = Number.isFinite(live?.sendDelayMs) ? live.sendDelayMs : (Number.isFinite(acc?.sendDelayMs) ? acc.sendDelayMs : 0);
+    delay = jitterDelay(delay);
+    if (warmup?.enabled && !warmup.inSendWindow) {
+      delay = Math.max(warmup.waitMs, 30000);
+      if (!state.warmupWindowLogged) {
+        console.log(`[${accountId}] Warmup window closed — next send after ${warmup.windowLabel}`);
+        state.warmupWindowLogged = true;
+      }
+    } else if (state.warmupWindowLogged) {
+      state.warmupWindowLogged = false;
+    }
     if (state.pausedUntil && Date.now() < state.pausedUntil) {
       delay = Math.max(state.pausedUntil - Date.now() + 500, 1000);
+    }
+    if (!accountCanSend(accountId) && !(warmup?.enabled && !warmup.inSendWindow)) {
+      stopAccountSender(accountId);
+      if (store.getPendingCount() === 0) store.updateCampaignStatuses();
+      return;
     }
     accountTimers[accountId] = setTimeout(tick, Math.max(0, delay));
   };
@@ -592,6 +614,7 @@ function stopSender(userInitiated = true) {
 }
 
 function resetDailyState() {
+  resetAccountsCache();
   for (const acc of getAccounts()) {
     const state = initAccountState(acc.id);
     state.dailyQuotaHit = false;
@@ -634,6 +657,7 @@ function getAccountStatuses() {
       pausedUntil: paused && state.pausedUntil ? new Date(state.pausedUntil).toISOString() : null,
       pendingQueue: store.getPendingCount(acc.id),
       lastError: senderState.lastError?.accountId === acc.id ? senderState.lastError : null,
+      warmup: getWarmupPlan(acc.id) || acc.warmup || null,
     };
   });
 }

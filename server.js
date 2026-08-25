@@ -876,7 +876,8 @@ if (!isServerless) {
     const accounts = getAccountStatuses();
     console.log(`Reachly running at http://localhost:${PORT}`);
     for (const a of accounts) {
-      console.log(`  ${a.label}: ${a.email} | ${a.todaySent}/${a.dailyLimit} today | ${a.protected ? 'PROTECTED' : 'standard'}`);
+      const warmup = a.warmup ? ` | warmup day ${a.warmup.day}/${a.warmup.totalDays}` : '';
+      console.log(`  ${a.label}: ${a.email} | ${a.todaySent}/${a.dailyLimit} today${warmup} | ${a.protected ? 'PROTECTED' : 'standard'}`);
     }
   });
 } else {

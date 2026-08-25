@@ -1,4 +1,5 @@
 const store = require('./store');
+const { getWarmupPlan } = require('./warmup');
 
 const HOST = process.env.SMTP_HOST || 'smtp.gmail.com';
 const PORT = parseInt(process.env.SMTP_PORT || '587', 10);
@@ -35,6 +36,7 @@ function buildAccount({
     dailyLimit,
     sendDelayMs,
     protected: !!isProtected,
+    warmup: null,
   };
 }
 
@@ -128,15 +130,27 @@ function loadAccounts() {
     if (Number.isFinite(override) && override > 0) {
       acc.dailyLimit = override;
     }
+    const warmup = getWarmupPlan(acc.id);
+    if (warmup) {
+      acc.warmup = warmup;
+      acc.dailyLimit = Math.min(acc.dailyLimit, warmup.dailyLimit);
+      acc.sendDelayMs = Math.max(acc.sendDelayMs, warmup.delayMs);
+      acc.protected = true;
+    }
   }
 
   return accounts;
 }
 
 let cachedAccounts = null;
+let cachedAccountsDate = null;
 
 function getAccounts() {
-  if (!cachedAccounts) cachedAccounts = loadAccounts();
+  const today = new Date().toLocaleDateString('en-CA');
+  if (!cachedAccounts || cachedAccountsDate !== today) {
+    cachedAccounts = loadAccounts();
+    cachedAccountsDate = today;
+  }
   return cachedAccounts;
 }
 
@@ -162,6 +176,7 @@ function getDefaultAccount() {
 
 function resetAccountsCache() {
   cachedAccounts = null;
+  cachedAccountsDate = null;
 }
 
 module.exports = {
