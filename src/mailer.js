@@ -3,8 +3,14 @@ const fs = require('fs');
 const crypto = require('crypto');
 const store = require('./store');
 const { getAccounts, getAccount, getDefaultAccount } = require('./accounts');
+const { saveCopyToSent } = require('./save-to-sent');
 const { htmlToPlain, wrapHtmlEmail, classifySmtpError } = require('./email-utils');
-const { generatePersonalizedOpener, generatePersonalizedClosing } = require('./personalize-opener');
+const {
+  generatePersonalizedOpener,
+  generatePersonalizedClosing,
+  generatePersonalizedSubject,
+  generateLocationLine,
+} = require('./personalize-opener');
 
 const transporters = {};
 const accountTimers = {};
@@ -61,7 +67,16 @@ function createTransporter(accountId) {
     return nodemailer.createTransport({ service: 'gmail', auth, pool: false });
   }
   return nodemailer.createTransport({
-    host: cfg.host, port: cfg.port, secure: cfg.secure, auth, pool: false,
+    host: cfg.host,
+    port: cfg.port,
+    secure: cfg.secure,
+    auth,
+    pool: true,
+    maxConnections: 1,
+    maxMessages: 200,
+    connectionTimeout: 15000,
+    greetingTimeout: 10000,
+    socketTimeout: 20000,
   });
 }
 
@@ -89,25 +104,31 @@ function personalize(text, contact) {
   const first = c.first_name || (c.name || '').split(' ')[0] || 'there';
   const last = c.last_name || '';
   const fullName = c.name || [first, last].filter(Boolean).join(' ') || 'there';
-
-  const location = c.city || 'your area';
+  const company = (c.company || '').trim();
+  const title = (c.title || '').trim();
+  const city = (c.city || '').trim();
+  const country = (c.country || '').trim();
+  const location = city || country || '';
 
   const map = {
     '{{first_name}}': first,
     '{{last_name}}': last,
     '{{name}}': fullName,
-    '{{title}}': c.title || 'your role',
-    '{{job_title}}': c.title || 'your role',
-    '{{company}}': c.company || 'your organization',
+    '{{title}}': title,
+    '{{job_title}}': title,
+    '{{company}}': company,
     '{{website}}': c.website || '',
     '{{linkedin}}': c.linkedin || '',
     '{{email}}': c.email || '',
-    '{{city}}': c.city || '',
-    '{{country}}': c.country || '',
+    '{{city}}': city,
+    '{{country}}': country,
     '{{location}}': location,
-    '{{industry}}': c.industry || 'your industry',
+    '{{industry}}': (c.industry || '').trim(),
     '{{personalized_opener}}': generatePersonalizedOpener(c),
     '{{personalized_closing}}': generatePersonalizedClosing(c),
+    '{{personalized_subject}}': generatePersonalizedSubject(c),
+    '{{location_line}}': generateLocationLine(c),
+    '{{portfolio_url}}': 'https://ahmad.xynovix.com/',
   };
 
   for (const cv of store.getCustomVariables()) {
@@ -124,6 +145,16 @@ function personalize(text, contact) {
   for (const [token, value] of Object.entries(map)) {
     result = result.replace(new RegExp(token.replace(/[{}]/g, '\\$&'), 'gi'), value);
   }
+
+  // Clean awkward leftovers when company/title/location were empty
+  result = result
+    .replace(/\s+at\s+(?=[\.,;:!?<]|$)/gi, '')
+    .replace(/\s+at\s+<\/p>/gi, '</p>')
+    .replace(/\s+—\s+(?=[\.,;:!?<]|$)/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s+([,.;!?])/g, '$1')
+    .replace(/>\s+</g, '><');
+
   return result;
 }
 
@@ -254,6 +285,14 @@ async function sendOneEmail(campaign, contact, accountId) {
       setTimeout(() => reject(new Error(`SMTP send timed out after ${timeoutMs / 1000}s`)), timeoutMs);
     }),
   ]);
+
+  try {
+    void saveCopyToSent(accountId, mailOptions).catch((err) => {
+      console.warn(`[${accountId}] Sent folder copy failed: ${err.message}`);
+    });
+  } catch (err) {
+    console.warn(`[${accountId}] Sent folder copy failed: ${err.message}`);
+  }
 }
 
 async function sendTestEmail(campaign, testTo, sampleContact, accountId) {
@@ -287,6 +326,13 @@ async function processNextEmailForAccount(accountId) {
   const acc = getAccount(accountId);
   const meta = { smtp_account_id: accountId, list_id: item.list_id };
 
+  if (store.wasEmailSentGlobally(item.email)) {
+    store.markQueueSkippedDuplicate(item.queue_id, item.campaign_id, item.contact_id, item.email, meta);
+    store.updateCampaignStatuses();
+    console.log(`⊘ [${accountId}] Skipped duplicate ${item.email}`);
+    return { success: true, skipped: true, email: item.email, accountId };
+  }
+
   state.isSending = true;
 
   try {
@@ -296,7 +342,7 @@ async function processNextEmailForAccount(accountId) {
     state.consecutiveRateLimits = 0;
     senderState.lastError = null;
     senderState.lastSentAt = Date.now();
-    lastSendDelayMs = acc?.sendDelayMs || 5000;
+    lastSendDelayMs = Number.isFinite(acc?.sendDelayMs) ? acc.sendDelayMs : 5000;
     const todayCount = store.getTodaySentCount(accountId);
     console.log(`✓ [${accountId}] Sent to ${item.email} (${todayCount}/${acc.dailyLimit} today)`);
     return { success: true, email: item.email, accountId };
@@ -306,13 +352,18 @@ async function processNextEmailForAccount(accountId) {
 
     if (classified.type === 'rate_limit' || classified.type === 'temporary') {
       const retries = store.getQueueRetries(item.queue_id);
-      if (retries < MAX_RETRIES) {
+      if (classified.retry !== false && retries < MAX_RETRIES) {
         store.requeueItem(item.queue_id, classified.message);
+        // Push retries to the back of the queue so we don't hammer the same address
+        store.bumpQueueItemToEnd(item.queue_id);
         state.consecutiveRateLimits++;
-        const backoff = classified.pauseMs * Math.pow(1.5, state.consecutiveRateLimits - 1);
-        const pauseMs = acc?.protected ? Math.min(backoff * 2, 3600000) : Math.min(backoff, 1800000);
-        pauseSenderForAccount(accountId, pauseMs, classified.message);
-        console.warn(`↻ [${accountId}] Rate limited on ${item.email} — retry ${retries + 1}/${MAX_RETRIES}`);
+        const wantPause = Number(classified.pauseMs) > 0 && (acc?.protected || Number(acc?.sendDelayMs) > 0);
+        if (wantPause) {
+          const backoff = classified.pauseMs * Math.pow(1.5, state.consecutiveRateLimits - 1);
+          const pauseMs = acc?.protected ? Math.min(backoff * 2, 3600000) : Math.min(backoff, 1800000);
+          pauseSenderForAccount(accountId, pauseMs, classified.message);
+        }
+        console.warn(`↻ [${accountId}] ${classified.type} on ${item.email} — retry ${retries + 1}/${MAX_RETRIES}`);
         return { success: false, email: item.email, retry: true, error: classified.message, accountId };
       }
     }
@@ -334,7 +385,20 @@ async function processNextEmailForAccount(accountId) {
         state.blockedUntil = Date.now() + pauseMs;
         console.error(`⛔ [${accountId}] PROTECTED account — blocked, pausing ${pauseMs / 60000} min`);
       } else {
-        console.error(`⛔ [${accountId}] Gmail blocked sending — paused ${pauseMs / 60000} min`);
+        console.error(`⛔ [${accountId}] SMTP blocked sending — paused ${pauseMs / 60000} min`);
+      }
+      return { success: false, email: item.email, error: classified.message, accountId };
+    }
+
+    if (classified.type === 'blocked') {
+      store.markFailed(item.queue_id, item.campaign_id, item.contact_id, item.email, classified.message, classified.type, meta);
+      store.updateCampaignStatuses();
+      if (acc?.protected) {
+        pauseSenderForAccount(accountId, 7200000, classified.message);
+        state.blockedUntil = Date.now() + 7200000;
+        console.error(`⛔ [${accountId}] PROTECTED account — contact blocked, pausing 120 min`);
+      } else {
+        console.warn(`⊘ [${accountId}] Contact blocked ${item.email} — skipped, continuing`);
       }
       return { success: false, email: item.email, error: classified.message, accountId };
     }
@@ -379,11 +443,15 @@ function scheduleAccountSender(accountId) {
       return;
     }
 
-    const delay = acc?.sendDelayMs || 5000;
-    accountTimers[accountId] = setTimeout(tick, delay);
+    const state = initAccountState(accountId);
+    let delay = Number.isFinite(acc?.sendDelayMs) ? acc.sendDelayMs : 0;
+    if (state.pausedUntil && Date.now() < state.pausedUntil) {
+      delay = Math.max(state.pausedUntil - Date.now() + 500, 1000);
+    }
+    accountTimers[accountId] = setTimeout(tick, Math.max(0, delay));
   };
 
-  accountTimers[accountId] = setTimeout(tick, 100);
+  accountTimers[accountId] = setTimeout(tick, 0);
 }
 
 function stopAccountSender(accountId) {
@@ -393,11 +461,91 @@ function stopAccountSender(accountId) {
   }
 }
 
+function startAccountSender(accountId) {
+  const acc = getAccount(accountId);
+  if (!acc) throw new Error('Account not found');
+
+  clearAccountPause(accountId);
+  const state = initAccountState(accountId);
+  state.blockedUntil = null;
+  state.pauseReason = null;
+  state.consecutiveRateLimits = 0;
+  if (senderState.lastError?.accountId === accountId) {
+    senderState.lastError = null;
+  }
+
+  let pending = store.getPendingCount(accountId);
+  if (pending === 0) {
+    const lists = getAccounts()
+      .filter(a => a.id === accountId)
+      .flatMap(() => {
+        // Restore transient failures for lists this account has campaigned
+        const camps = store.getCampaigns().filter(c => (c.smtp_account_id || 'account1') === accountId);
+        return [...new Set(camps.map(c => c.list_id).filter(Boolean))];
+      });
+    const restored = store.restoreTransientBlockedContacts(lists);
+    if (restored > 0) {
+      console.log(`[${accountId}] Restored ${restored.toLocaleString()} contacts blocked by temporary SMTP/network errors`);
+    }
+    const requeued = store.requeueFailedActiveForAccount(accountId, { includeLookupFailures: true });
+    if (requeued > 0) {
+      pending = store.getPendingCount(accountId);
+      console.log(`[${accountId}] Force start — requeued ${requeued.toLocaleString()} failed/skipped contact(s)`);
+    }
+    // Also queue any remaining eligible contacts into this account's campaigns
+    for (const camp of store.getCampaigns().filter(c => (c.smtp_account_id || 'account1') === accountId)) {
+      const ids = store.getEligibleContactIds(camp.list_id || 'list1', { skipAlreadySent: true });
+      if (ids.length === 0) continue;
+      const queued = store.queueCampaign(camp.id, ids);
+      if (queued > 0) {
+        store.setCampaignStatus(camp.id, 'sending');
+        console.log(`[${accountId}] Queued ${queued.toLocaleString()} remaining contacts for campaign #${camp.id}`);
+      }
+    }
+    pending = store.getPendingCount(accountId);
+  }
+  if (pending > 0 && accountCanSend(accountId)) {
+    scheduleAccountSender(accountId);
+    store.resumeSendingCampaigns();
+    store.setMeta({ userStoppedSender: false });
+    console.log(`[${accountId}] Sender started (${pending.toLocaleString()} pending)`);
+    return { started: true, pending };
+  }
+
+  if (pending === 0) {
+    console.log(`[${accountId}] No pending emails in queue`);
+  } else {
+    console.log(`[${accountId}] Cannot start — daily limit reached`);
+  }
+  return { started: false, pending };
+}
+
+function stopAccountSenderById(accountId, userInitiated = true) {
+  const acc = getAccount(accountId);
+  if (!acc) throw new Error('Account not found');
+  stopAccountSender(accountId);
+  if (userInitiated) {
+    console.log(`[${accountId}] Sender stopped by user`);
+  }
+  return { stopped: true };
+}
+
 function startSender() {
   const accounts = getAccounts();
   let started = false;
 
+  const dupesSkipped = store.purgeDuplicatePendingQueue();
+  if (dupesSkipped > 0) {
+    console.log(`Skipped ${dupesSkipped.toLocaleString()} duplicate queue item(s) — already emailed`);
+  }
+
   for (const acc of accounts) {
+    clearAccountPause(acc.id);
+    const state = initAccountState(acc.id);
+    state.blockedUntil = null;
+    state.pauseReason = null;
+    state.consecutiveRateLimits = 0;
+
     const deferred = store.deferBlockedQueueItems(acc.id);
     if (deferred > 0) {
       console.log(`[${acc.id}] Deferred ${deferred} stuck queue item(s) until tomorrow`);
@@ -485,6 +633,7 @@ function getAccountStatuses() {
       pauseReason: paused ? state.pauseReason : null,
       pausedUntil: paused && state.pausedUntil ? new Date(state.pausedUntil).toISOString() : null,
       pendingQueue: store.getPendingCount(acc.id),
+      lastError: senderState.lastError?.accountId === acc.id ? senderState.lastError : null,
     };
   });
 }
@@ -571,7 +720,9 @@ module.exports = {
   sendTestWithCustomConfig,
   resetTransporter,
   startSender,
+  startAccountSender,
   stopSender,
+  stopAccountSenderById,
   getSenderStatus,
   getAccountStatuses,
   queueCampaign: store.queueCampaign,

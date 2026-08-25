@@ -126,6 +126,9 @@ function classifySmtpError(err) {
   if (
     full.includes('address not found') ||
     full.includes('domain name not found') ||
+    full.includes('name service error') ||
+    full.includes('no data record') ||
+    full.includes('host or domain name not found') ||
     full.includes('nxdomain') ||
     full.includes('dns error') ||
     full.includes('bad destination') ||
@@ -169,18 +172,30 @@ function classifySmtpError(err) {
       type: 'blocked',
       retry: false,
       suppress: true,
-      pauseAll: true,
+      pauseAll: false,
       message: 'Message blocked or rejected — contact suppressed',
     };
   }
 
+  if (full.includes('lookup failure') || full.includes('temporary lookup')) {
+    return { type: 'temporary', retry: true, pauseMs: 0, message: 'Temporary lookup failure — will retry' };
+  }
+
   if (
-    code === 421 || code === 450 || code === 451 || code === 452 ||
+    full.includes('enetunreach') || full.includes('econnrefused') || full.includes('econnreset') ||
+    full.includes('etimedout') || full.includes('socket') || full.includes('network') ||
+    full.includes('connect ')
+  ) {
+    return { type: 'temporary', retry: true, pauseMs: 2000, message: 'Network/SMTP connection error — will retry' };
+  }
+
+  if (
+    code === 421 || code === 450 || code === 452 ||
     full.includes('rate limit') || full.includes('too many') ||
-    full.includes('4.2.1') || full.includes('4.7.0') || full.includes('4.3.0') ||
+    full.includes('4.2.1') || full.includes('4.7.0') ||
     full.includes('throttl') || full.includes('try again later')
   ) {
-    return { type: 'rate_limit', retry: true, pauseMs: 120000, message: 'Gmail rate limit — pausing and retrying' };
+    return { type: 'rate_limit', retry: true, pauseMs: 0, message: 'SMTP rate limit — retrying next email immediately' };
   }
 
   if (
@@ -192,7 +207,7 @@ function classifySmtpError(err) {
   }
 
   if (code >= 500 || full.includes('temporary') || full.includes('timeout') || full.includes('econnreset')) {
-    return { type: 'temporary', retry: true, pauseMs: 60000, message: 'Temporary server error — will retry' };
+    return { type: 'temporary', retry: true, pauseMs: 1000, message: 'Temporary server error — will retry' };
   }
 
   if (full.includes('invalid') && full.includes('address')) {

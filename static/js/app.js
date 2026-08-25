@@ -1,7 +1,6 @@
 const API = '/api';
 
 let currentPage = 1;
-let refreshInterval = null;
 let quillEditor = null;
 let charts = {};
 let lastSenderRunning = false;
@@ -127,14 +126,21 @@ function renderAccountCards(accounts) {
   if (!el) return;
   if (!accounts?.length) { el.innerHTML = ''; return; }
   el.innerHTML = accounts.map(a => {
-    let badge = 'ok', badgeText = 'Healthy';
+    let badge = 'ok', badgeText = 'Idle';
     if (a.paused) { badge = 'warning'; badgeText = 'Paused'; }
     else if (a.isSending) { badge = 'sending'; badgeText = 'Sending now'; }
     else if (a.running) { badge = 'running'; badgeText = 'Running'; }
-    else if (a.blocked) { badge = 'danger'; badgeText = 'Paused (block)'; }
+    else if (a.blocked) { badge = 'danger'; badgeText = 'Blocked'; }
     else if (a.dailyQuotaHit) { badge = 'warning'; badgeText = 'Daily limit'; }
     else if (a.protected) { badge = 'protected'; badgeText = 'Protected'; }
+
     const pct = a.dailyLimit > 0 ? Math.round((a.todaySent / a.dailyLimit) * 100) : 0;
+    const statusLine = a.paused && a.pauseReason
+      ? `<div class="account-card-alert warning">${escapeHtml(a.pauseReason)}${a.pausedUntil ? ` · resumes ${formatDate(a.pausedUntil)}` : ''}</div>`
+      : a.lastError?.type === 'blocked'
+        ? `<div class="account-card-alert error">${escapeHtml(a.lastError.message || 'Message blocked')}</div>`
+        : '';
+
     return `<div class="account-card ${a.protected ? 'protected' : ''}">
       <div class="account-card-header">
         <div><strong>${escapeHtml(a.label)}</strong><div class="account-card-email">${escapeHtml(a.email)}</div></div>
@@ -142,7 +148,11 @@ function renderAccountCards(accounts) {
       </div>
       <div class="quota-bar" style="margin:8px 0"><div class="quota-fill" style="width:${pct}%"></div></div>
       <div style="font-size:0.85rem;color:var(--text-muted)">
-        ${a.todaySent}/${a.dailyLimit} today · ${a.remainingToday} left · ${a.sendDelayMs / 1000}s delay · ${escapeHtml(a.listLabel)}${a.pendingQueue ? ` · ${a.pendingQueue.toLocaleString()} queued` : ''}
+        <strong>${a.todaySent}/${a.dailyLimit}</strong> today · ${a.remainingToday} left · ${a.sendDelayMs / 1000}s delay · ${escapeHtml(a.listLabel)}${a.pendingQueue ? ` · ${a.pendingQueue.toLocaleString()} queued` : ''}
+      </div>
+      ${statusLine}
+      <div class="account-card-actions">
+        <button type="button" class="btn btn-sm ${a.running ? 'btn-danger' : 'btn-primary'}" onclick="toggleAccountSender('${a.id}')">${a.running ? 'Stop' : 'Start'}</button>
       </div>
     </div>`;
   }).join('');
@@ -166,6 +176,7 @@ function upsertChart(id, config) {
   const baseOptions = {
     responsive: true,
     maintainAspectRatio: false,
+    animation: false,
     ...config.options,
   };
   if (charts[id]) {
@@ -427,12 +438,14 @@ function renderQueueProgress(sender, progress) {
     estimate.textContent = '';
   }
 
-  const campaigns = progress.activeCampaigns || (progress.activeCampaign ? [progress.activeCampaign] : []);
+  const campaigns = progress.campaigns
+    || progress.activeCampaigns
+    || (progress.activeCampaign ? [progress.activeCampaign] : []);
   const listEl = document.getElementById('activeCampaignsList');
   const actionsEl = document.getElementById('campaignProgressActions');
 
   if (listEl) {
-    if (campaigns.length > 1) {
+    if (campaigns.length > 0) {
       listEl.innerHTML = campaigns.map(c => {
         const acc = accountsData.find(a => a.id === c.smtp_account_id);
         return `<div class="active-campaign-row">
@@ -445,7 +458,7 @@ function renderQueueProgress(sender, progress) {
           </div>
           <div class="quota-bar"><div class="quota-fill" style="width:${c.percentComplete || 0}%"></div></div>
           <div style="font-size:0.85rem;color:var(--text-muted);margin-top:6px">
-            ${c.sent.toLocaleString()} sent · ${c.pending.toLocaleString()} remaining · ${c.total.toLocaleString()} total (${c.percentComplete || 0}%)
+            ${(c.sent || 0).toLocaleString()} sent · ${(c.pending || 0).toLocaleString()} remaining · ${(c.total || 0).toLocaleString()} total (${c.percentComplete || 0}%)
           </div>
         </div>`;
       }).join('');
@@ -453,11 +466,7 @@ function renderQueueProgress(sender, progress) {
       if (actionsEl) actionsEl.innerHTML = '';
     } else {
       listEl.innerHTML = '';
-      const active = campaigns[0];
-      if (actionsEl && active) {
-        actionsEl.classList.remove('hidden');
-        actionsEl.innerHTML = campaignActions(active);
-      } else if (actionsEl) {
+      if (actionsEl) {
         actionsEl.classList.add('hidden');
         actionsEl.innerHTML = '';
       }
@@ -478,23 +487,31 @@ function renderDashboardAlerts(sender, progress) {
   const alerts = [];
 
   if (progress?.pending > 0 && sender.dailyLimitReached) {
-    alerts.push({ type: 'info', msg: `${progress.pending.toLocaleString()} emails queued. Will auto-resume tomorrow (490/day limit).` });
+    alerts.push({ type: 'info', msg: `${progress.pending.toLocaleString()} emails queued. Will auto-resume tomorrow when daily limits reset.` });
   }
   if (sender.userStopped && progress?.pending > 0) {
-    alerts.push({ type: 'warning', msg: `Sender stopped at email #${sender.stoppedAtPosition || progress.completed}. Click Start Sender to continue.` });
+    alerts.push({ type: 'warning', msg: `All senders stopped at email #${sender.stoppedAtPosition || progress.completed}. Use Start on each account or Start Sender to continue.` });
   }
-  if (sender.dailyQuotaHit) {
-    alerts.push({ type: 'error', msg: 'Gmail daily sending limit reached. Queue resumes automatically tomorrow.' });
+
+  for (const a of (sender.accounts || [])) {
+    if (a.paused && a.pauseReason) {
+      alerts.push({
+        type: a.blocked || a.lastError?.type === 'blocked' ? 'error' : 'warning',
+        msg: `${a.email}: ${a.pauseReason} (${a.todaySent}/${a.dailyLimit} today, ${(a.pendingQueue || 0).toLocaleString()} queued)${a.pausedUntil ? `. Resumes ${formatDate(a.pausedUntil)}` : ''}`,
+      });
+    } else if (a.dailyQuotaHit) {
+      alerts.push({ type: 'info', msg: `${a.email}: daily limit reached (${a.todaySent}/${a.dailyLimit}). Resumes tomorrow.` });
+    } else if (a.lastError?.type === 'blocked') {
+      alerts.push({
+        type: 'error',
+        msg: `${a.email}: ${a.lastError.message || 'Message blocked'} (${a.todaySent}/${a.dailyLimit} today)`,
+      });
+    }
   }
-  if (sender.paused && sender.pauseReason) {
-    alerts.push({ type: 'warning', msg: `Account paused: ${sender.pauseReason}${sender.pausedUntil ? `. Resumes at ${formatDate(sender.pausedUntil)}` : ''}` });
-  }
+
   const runningAccounts = (sender.accounts || []).filter(a => a.running);
   if (runningAccounts.length > 1) {
-    alerts.push({ type: 'info', msg: `${runningAccounts.length} campaigns sending in parallel (${runningAccounts.map(a => a.email.split('@')[0]).join(' + ')}).` });
-  }
-  if (sender.lastError?.type === 'blocked') {
-    alerts.push({ type: 'error', msg: 'Gmail blocked an email. Review content and wait before resuming.' });
+    alerts.push({ type: 'info', msg: `${runningAccounts.length} accounts sending in parallel (${runningAccounts.map(a => a.email).join(', ')}).` });
   }
 
   if (alerts.length === 0) {
@@ -506,6 +523,25 @@ function renderDashboardAlerts(sender, progress) {
     `<div class="dashboard-alert ${a.type}">${escapeHtml(a.msg)}</div>`
   ).join('');
 }
+
+async function toggleAccountSender(accountId) {
+  try {
+    const account = accountsData.find(a => a.id === accountId);
+    const status = await api('/sender/status');
+    const acc = (status.accounts || []).find(a => a.id === accountId);
+    if (acc?.running) {
+      await api(`/sender/accounts/${accountId}/stop`, { method: 'POST' });
+      toast(`${account?.email || accountId} stopped`);
+    } else {
+      await api(`/sender/accounts/${accountId}/start`, { method: 'POST' });
+      toast(`${account?.email || accountId} started`);
+    }
+    loadDashboard();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+window.toggleAccountSender = toggleAccountSender;
 
 document.getElementById('toggleSender').addEventListener('click', async () => {
   try {
@@ -1140,7 +1176,7 @@ async function loadCampaigns() {
       const typeBadge = c.campaign_type === 'follow_up'
         ? '<span class="badge-follow">Follow-up</span>'
         : '';
-      return `<tr class="row-animate">
+      return `<tr>
         <td>${escapeHtml(c.name)}${c.attachment ? ' 📎' : ''} ${typeBadge}</td>
         <td style="font-size:0.8rem">${acc ? escapeHtml(acc.email.split('@')[0]) : c.smtp_account_id || '—'}</td>
         <td>${c.list_id || '—'}</td>
@@ -1370,18 +1406,59 @@ async function loadSettings() {
         <h2>${escapeHtml(a.label)}</h2>
         <p class="account-card-email">${escapeHtml(a.email)}</p>
         <ul class="tips-list">
-          <li><strong>${a.dailyLimit}/day</strong> limit · <strong>${a.sendDelayMs / 1000}s</strong> delay between sends</li>
+          <li><strong>${a.todaySent}/${a.dailyLimit}</strong> sent today · <strong>${a.remainingToday}</strong> remaining</li>
+          <li><strong>${a.sendDelayMs / 1000}s</strong> delay between sends</li>
           <li>List: <strong>${escapeHtml(a.listLabel)}</strong> (${(data.lists[a.listId]?.total || 0).toLocaleString()} contacts)</li>
-          <li>Today: ${a.todaySent}/${a.dailyLimit} sent · ${a.remainingToday} remaining</li>
+          ${a.pendingQueue ? `<li><strong>${a.pendingQueue.toLocaleString()}</strong> emails queued</li>` : ''}
+          ${a.paused && a.pauseReason ? `<li class="warning-text">${escapeHtml(a.pauseReason)}${a.pausedUntil ? ` — resumes ${formatDate(a.pausedUntil)}` : ''}</li>` : ''}
           ${a.protected ? '<li>🛡 <strong>Protected mode</strong> — extended pauses on blocks</li>' : ''}
         </ul>
-        <div class="form-actions">
-          <button type="button" class="btn btn-primary" onclick="testAccountSmtp('${a.id}')">Test Connection</button>
+        <div class="form-group" style="margin-top:12px;max-width:220px">
+          <label for="dailyLimit-${a.id}">Daily send limit</label>
+          <input type="number" id="dailyLimit-${a.id}" min="1" max="10000" step="1" value="${a.dailyLimit}">
         </div>
-        <div id="smtpStatus-${a.id}" class="alert hidden"></div>
+        <div class="form-actions">
+          <button type="button" class="btn ${a.running ? 'btn-danger' : 'btn-primary'}" onclick="toggleAccountSender('${a.id}')">${a.running ? 'Stop Sending' : 'Start Sending'}</button>
+          <button type="button" class="btn btn-primary" onclick="saveAccountDailyLimit('${a.id}')">Save Limit</button>
+          <button type="button" class="btn" onclick="testAccountSmtp('${a.id}')">Test Connection</button>
+        </div>
+        <div id="smtpStatus-${a.id}" class="alert hidden" style="margin-top:12px"></div>
       </div>
     `).join('');
   } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+async function saveAccountDailyLimit(accountId) {
+  const input = document.getElementById(`dailyLimit-${accountId}`);
+  const statusEl = document.getElementById(`smtpStatus-${accountId}`);
+  const dailyLimit = parseInt(input?.value, 10);
+  if (!Number.isFinite(dailyLimit) || dailyLimit < 1) {
+    toast('Enter a valid daily limit (1 or higher)', 'error');
+    return;
+  }
+  try {
+    const result = await api(`/accounts/${accountId}/daily-limit`, {
+      method: 'PATCH',
+      body: JSON.stringify({ dailyLimit }),
+    });
+    const limit = result.account?.dailyLimit ?? dailyLimit;
+    if (input) input.value = limit;
+    if (statusEl) {
+      statusEl.className = 'alert success';
+      statusEl.textContent = `Daily limit updated to ${limit}/day`;
+      statusEl.classList.remove('hidden');
+    }
+    toast(`Saved ${limit}/day for ${result.account?.email || accountId}`);
+    await loadAccounts();
+    loadDashboard();
+  } catch (err) {
+    if (statusEl) {
+      statusEl.className = 'alert error';
+      statusEl.textContent = err.message;
+      statusEl.classList.remove('hidden');
+    }
     toast(err.message, 'error');
   }
 }
@@ -1422,18 +1499,6 @@ function debounce(fn, ms) {
   };
 }
 
-// Auto-refresh — every 2 seconds on dashboard for live monitoring
-function startAutoRefresh() {
-  if (refreshInterval) clearInterval(refreshInterval);
-  refreshInterval = setInterval(() => {
-    const dash = document.getElementById('page-dashboard');
-    if (dash.classList.contains('active')) loadDashboard();
-    const camps = document.getElementById('page-campaigns');
-    if (camps.classList.contains('active')) loadCampaigns();
-  }, 2000);
-}
-
 // Init
 initEditor();
 loadDashboard();
-startAutoRefresh();

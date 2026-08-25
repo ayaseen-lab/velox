@@ -14,6 +14,9 @@ const DATA_VARIABLES = [
   { token: '{{linkedin}}', label: 'LinkedIn', source: 'data', field: 'linkedin' },
   { token: '{{personalized_opener}}', label: 'AI Opener', source: 'generated', field: 'personalized_opener' },
   { token: '{{personalized_closing}}', label: 'AI Closing', source: 'generated', field: 'personalized_closing' },
+  { token: '{{personalized_subject}}', label: 'AI Subject', source: 'generated', field: 'personalized_subject' },
+  { token: '{{location_line}}', label: 'AI Location / Timezone Line', source: 'generated', field: 'location_line' },
+  { token: '{{portfolio_url}}', label: 'Portfolio URL', source: 'static', field: 'portfolio_url' },
 ];
 
 function getDataVariables() {

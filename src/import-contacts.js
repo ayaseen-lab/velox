@@ -19,13 +19,14 @@ function normalizeContact(row) {
   const email = pick(row, 'email address', 'email', 'e-mail', 'mail');
   const company = pick(row, 'company name', 'company', 'organization', 'org');
   const title = pick(row, 'job title', 'title', 'position', 'role');
-  const website = pick(row, 'website', 'url', 'company website');
+  const website = pick(row, 'website', 'url', 'company website', 'source url', 'source_url');
   const linkedin = pick(row, 'linkedin profile', 'linkedin', 'linkedin url', 'person linkedin url');
   const city = pick(row, 'city', 'person city');
   const country = pick(row, 'country', 'person country');
-  const industry = pick(row, 'industry', 'company industry');
+  const industry = pick(row, 'industry', 'company industry', 'source');
+  const phone = pick(row, 'phone', 'phone number', 'mobile', 'tel');
   const companyProfile = pick(row, 'company profile', 'company about', 'about', 'description', 'company description', 'specialties', 'keywords');
-  const name = pick(row, 'name', 'full name') || [firstName, lastName].filter(Boolean).join(' ');
+  const name = pick(row, 'name', 'full name', 'full_name') || [firstName, lastName].filter(Boolean).join(' ');
 
   return {
     email,
@@ -39,6 +40,7 @@ function normalizeContact(row) {
     city,
     country,
     industry,
+    phone,
     company_profile: companyProfile,
   };
 }

@@ -1,8 +1,8 @@
 const DEFAULT_EMAIL = {
   id: 'default',
-  version: 12,
+  version: 13,
   name: 'Ahmad Yaseen - Senior Software Developer (IoT, AI, Embedded, Full Stack)',
-  subject: 'Quick note for {{first_name}} at {{company}}',
+  subject: '{{personalized_subject}}',
   preheader: '',
   body_html: `<p>Hi {{first_name}},</p>
 
@@ -41,9 +41,11 @@ const DEFAULT_EMAIL = {
 
 <p>Beyond full-time engineering roles, I also help teams with web platforms, APIs, dashboards, or internal tools when build capacity is useful. I keep handoffs simple and pass along full source code and documentation so your team owns what we build.</p>
 
-<p>I am looking for a remote engineering role and can align my working hours with your team in {{location}}. Happy to adjust for your timezone so collaboration stays easy.</p>
+<p>{{location_line}}</p>
 
 <p>{{personalized_closing}}</p>
+
+<p>Selected work and case studies: <strong>https://ahmad.xynovix.com/</strong></p>
 
 <p>My resume is attached. If a short call would be useful: calendly.com/ahmadrandhawa01/30min</p>
 
@@ -53,6 +55,7 @@ const DEFAULT_EMAIL = {
 Ahmad Yaseen<br>
 Senior Software Developer | IoT, AI, Embedded and Full Stack Engineer<br>
 ahmadrandhawa01@gmail.com<br>
+Portfolio: <strong>https://ahmad.xynovix.com/</strong><br>
 linkedin.com/in/ahmadyaseen1</p>`,
   test_email: 'ahmadjutt463@gmail.com',
   sample_contact: {
@@ -73,21 +76,24 @@ linkedin.com/in/ahmadyaseen1</p>`,
 
 const FOLLOW_UP_EMAIL = {
   id: 'follow-up',
-  version: 1,
+  version: 2,
   name: 'Follow-up — gentle nudge',
-  subject: 'Following up, {{first_name}} — {{company}}',
+  subject: '{{personalized_subject}}',
   preheader: '',
   body_html: `<p>Hi {{first_name}},</p>
 
 <p>I wanted to follow up briefly on my earlier note about senior engineering work — embedded, IoT, AI, and full-stack systems.</p>
 
-<p>If timing is better now, I would welcome a short conversation about how I could support {{company}}. If not, no worries at all — happy to reconnect later.</p>
+<p>{{personalized_closing}}</p>
+
+<p>Selected work: <strong>https://ahmad.xynovix.com/</strong></p>
 
 <p>Resume is still attached for convenience. Calendar: calendly.com/ahmadrandhawa01/30min</p>
 
 <p>Best regards,<br>
 Ahmad Yaseen<br>
 Senior Software Developer | IoT, AI, Embedded and Full Stack Engineer<br>
+Portfolio: <strong>https://ahmad.xynovix.com/</strong><br>
 linkedin.com/in/ahmadyaseen1</p>`,
 };
 

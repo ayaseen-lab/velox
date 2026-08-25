@@ -1,3 +1,5 @@
+const store = require('./store');
+
 const HOST = process.env.SMTP_HOST || 'smtp.gmail.com';
 const PORT = parseInt(process.env.SMTP_PORT || '587', 10);
 const SECURE = process.env.SMTP_SECURE === 'true';
@@ -79,27 +81,12 @@ function loadAccounts() {
     port: parseInt(process.env.SMTP_ACCOUNT_3_PORT || '465', 10),
     secure: process.env.SMTP_ACCOUNT_3_SECURE !== 'false',
     dailyLimit: parseInt(process.env.SMTP_ACCOUNT_3_DAILY_LIMIT || '490', 10),
-    sendDelayMs: parseInt(process.env.SMTP_ACCOUNT_3_DELAY_MS || '5000', 10),
+    sendDelayMs: parseInt(process.env.SMTP_ACCOUNT_3_DELAY_MS || '10000', 10),
     protected: false,
   });
   if (account3) accounts.push(account3);
 
-  const account4 = buildAccount({
-    id: 'account4',
-    listId: 'list4',
-    label: 'Email 4 — Hostinger (Ahmad)',
-    listLabel: 'Data List 4',
-    email: process.env.SMTP_ACCOUNT_4_USER,
-    pass: process.env.SMTP_ACCOUNT_4_PASS,
-    fromName: process.env.SMTP_ACCOUNT_4_FROM_NAME,
-    host: process.env.SMTP_ACCOUNT_4_HOST || 'smtp.hostinger.com',
-    port: parseInt(process.env.SMTP_ACCOUNT_4_PORT || '465', 10),
-    secure: process.env.SMTP_ACCOUNT_4_SECURE !== 'false',
-    dailyLimit: parseInt(process.env.SMTP_ACCOUNT_4_DAILY_LIMIT || '490', 10),
-    sendDelayMs: parseInt(process.env.SMTP_ACCOUNT_4_DELAY_MS || '5000', 10),
-    protected: false,
-  });
-  if (account4) accounts.push(account4);
+  // account4 removed — same mailbox as account6 (ahmad@xynovix.com); list4 unused
 
   const account5 = buildAccount({
     id: 'account5',
@@ -113,10 +100,35 @@ function loadAccounts() {
     port: parseInt(process.env.SMTP_ACCOUNT_5_PORT || '465', 10),
     secure: process.env.SMTP_ACCOUNT_5_SECURE !== 'false',
     dailyLimit: parseInt(process.env.SMTP_ACCOUNT_5_DAILY_LIMIT || '490', 10),
-    sendDelayMs: parseInt(process.env.SMTP_ACCOUNT_5_DELAY_MS || '5000', 10),
+    sendDelayMs: parseInt(process.env.SMTP_ACCOUNT_5_DELAY_MS || '10000', 10),
     protected: false,
   });
   if (account5) accounts.push(account5);
+
+  const account6 = buildAccount({
+    id: 'account6',
+    listId: 'list5',
+    label: 'Email 6 — Hostinger (Ahmad)',
+    listLabel: 'Data List 5 + 6',
+    email: process.env.SMTP_ACCOUNT_6_USER || process.env.SMTP_ACCOUNT_4_USER,
+    pass: process.env.SMTP_ACCOUNT_6_PASS || process.env.SMTP_ACCOUNT_4_PASS,
+    fromName: process.env.SMTP_ACCOUNT_6_FROM_NAME || process.env.SMTP_ACCOUNT_4_FROM_NAME || 'Ahmad',
+    host: process.env.SMTP_ACCOUNT_6_HOST || process.env.SMTP_ACCOUNT_4_HOST || 'smtp.hostinger.com',
+    port: parseInt(process.env.SMTP_ACCOUNT_6_PORT || process.env.SMTP_ACCOUNT_4_PORT || '465', 10),
+    secure: (process.env.SMTP_ACCOUNT_6_SECURE || process.env.SMTP_ACCOUNT_4_SECURE) !== 'false',
+    dailyLimit: parseInt(process.env.SMTP_ACCOUNT_6_DAILY_LIMIT || '3000', 10),
+    sendDelayMs: parseInt(process.env.SMTP_ACCOUNT_6_DELAY_MS || '500', 10),
+    protected: false,
+  });
+  if (account6) accounts.push(account6);
+
+  const overrides = store.getAccountDailyLimits();
+  for (const acc of accounts) {
+    const override = overrides[acc.id];
+    if (Number.isFinite(override) && override > 0) {
+      acc.dailyLimit = override;
+    }
+  }
 
   return accounts;
 }
@@ -126,6 +138,14 @@ let cachedAccounts = null;
 function getAccounts() {
   if (!cachedAccounts) cachedAccounts = loadAccounts();
   return cachedAccounts;
+}
+
+function updateAccountDailyLimit(accountId, dailyLimit) {
+  const acc = getAccount(accountId);
+  if (!acc) throw new Error('Account not found');
+  const limit = store.setAccountDailyLimit(accountId, dailyLimit);
+  resetAccountsCache();
+  return { ...getAccount(accountId), dailyLimit: limit };
 }
 
 function getAccount(id) {
@@ -150,4 +170,5 @@ module.exports = {
   getAccountByList,
   getDefaultAccount,
   resetAccountsCache,
+  updateAccountDailyLimit,
 };

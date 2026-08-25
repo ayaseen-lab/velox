@@ -1,4 +1,11 @@
 require('dotenv').config();
+
+process.on('unhandledRejection', (err) => {
+  console.warn('Unhandled promise rejection (non-fatal):', err?.message || err);
+});
+process.on('uncaughtException', (err) => {
+  console.warn('Uncaught exception (non-fatal):', err?.message || err);
+});
 const express = require('express');
 const multer = require('multer');
 const { parseContactsCsv, parseContactsXlsx } = require('./src/import-contacts');
@@ -9,7 +16,7 @@ const cron = require('node-cron');
 
 const { uploadsDir, attachmentsDir, isServerless } = require('./src/paths');
 const store = require('./src/store');
-const { getAccounts, getAccount, getAccountByList } = require('./src/accounts');
+const { getAccounts, getAccount, getAccountByList, updateAccountDailyLimit } = require('./src/accounts');
 const { validateCampaign, htmlToPlain } = require('./src/email-utils');
 const {
   getSmtpConfig,
@@ -17,6 +24,8 @@ const {
   resetTransporter,
   startSender,
   stopSender,
+  startAccountSender,
+  stopAccountSenderById,
   getSenderStatus,
   getAccountStatuses,
   queueCampaign,
@@ -30,8 +39,7 @@ const {
 const { getProviders, getProvider } = require('./src/email-providers');
 const { getLeadProviders, searchLeads } = require('./src/lead-providers');
 const { getDataVariables } = require('./src/variables');
-const { requireAuth, isAuthenticated, setPasswordCookie, setSupabaseCookie, clearAuthCookies, verifyPassword } = require('./src/auth');
-const { getPublicAuthConfig, verifySupabaseAccessToken } = require('./src/supabase');
+const { requireAuth, isAuthenticated, setAuthCookie, clearAuthCookie, verifyPassword } = require('./src/auth');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -57,12 +65,8 @@ app.get('/login', (req, res) => {
   res.sendFile(path.join(__dirname, 'static', 'login.html'));
 });
 
-app.get('/api/auth/config', (req, res) => {
-  res.json(getPublicAuthConfig());
-});
-
-app.get('/api/auth/status', async (req, res) => {
-  res.json({ authenticated: await isAuthenticated(req) });
+app.get('/api/auth/status', (req, res) => {
+  res.json({ authenticated: isAuthenticated(req) });
 });
 
 app.post('/api/auth/login', (req, res) => {
@@ -70,27 +74,12 @@ app.post('/api/auth/login', (req, res) => {
   if (!verifyPassword(password)) {
     return res.status(401).json({ error: 'Invalid password' });
   }
-  setPasswordCookie(res);
+  setAuthCookie(res);
   res.json({ success: true });
 });
 
-app.post('/api/auth/supabase', async (req, res) => {
-  const { access_token } = req.body || {};
-  if (!access_token) {
-    return res.status(400).json({ error: 'Missing access token' });
-  }
-
-  const user = await verifySupabaseAccessToken(access_token);
-  if (!user) {
-    return res.status(401).json({ error: 'Invalid Supabase session' });
-  }
-
-  setSupabaseCookie(res, access_token);
-  res.json({ success: true, email: user.email });
-});
-
 app.post('/api/auth/logout', (req, res) => {
-  clearAuthCookies(res);
+  clearAuthCookie(res);
   res.json({ success: true });
 });
 
@@ -122,6 +111,16 @@ app.get('/api/accounts', (req, res) => {
   const accounts = getAccountStatuses();
   const lists = store.getAllListCounts();
   res.json({ accounts, lists });
+});
+
+app.patch('/api/accounts/:id/daily-limit', (req, res) => {
+  try {
+    const updated = updateAccountDailyLimit(req.params.id, req.body?.dailyLimit);
+    const status = getAccountStatuses().find(a => a.id === updated.id);
+    res.json({ success: true, account: status || updated });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 app.get('/api/stats', (req, res) => {
@@ -617,6 +616,24 @@ app.post('/api/sender/start', (req, res) => {
 app.post('/api/sender/stop', (req, res) => {
   stopSender();
   res.json(getSenderStatus());
+});
+
+app.post('/api/sender/accounts/:accountId/start', (req, res) => {
+  try {
+    startAccountSender(req.params.accountId);
+    res.json(getSenderStatus());
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/sender/accounts/:accountId/stop', (req, res) => {
+  try {
+    stopAccountSenderById(req.params.accountId);
+    res.json(getSenderStatus());
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 // --- Email configuration ---

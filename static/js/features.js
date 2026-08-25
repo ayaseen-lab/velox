@@ -148,7 +148,7 @@ function renderConnectedAccounts(data) {
     return;
   }
   el.innerHTML = rows.map((a, i) => `
-    <div class="account-row" style="animation-delay:${i * 40}ms">
+    <div class="account-row">
       <div>
         <strong>${escapeHtml(a.label || a.email)}</strong>
         <span class="badge-configured">${a.source === 'env' ? 'Active' : a.isDemo || a.source === 'demo' ? 'Demo' : 'Saved'}</span>
@@ -374,7 +374,7 @@ function renderLeadResults(result) {
       : '<span class="badge-configured">Live data</span>';
   }
   tbody.innerHTML = (result.leads || []).map((l, i) => `
-    <tr class="row-animate" style="animation-delay:${i * 40}ms">
+    <tr>
       <td><input type="checkbox" class="lead-check" data-idx="${i}" checked></td>
       <td><strong>${escapeHtml(l.name || `${l.first_name} ${l.last_name}`)}</strong></td>
       <td>${escapeHtml(l.email || '—')}</td>
@@ -412,37 +412,4 @@ document.getElementById('leadImportBtn')?.addEventListener('click', async () => 
   }
 });
 
-/* Custom cursor */
-(function initCursor() {
-  const dot = document.getElementById('cursorDot');
-  const ring = document.getElementById('cursorRing');
-  if (!dot || !ring) return;
-  if (window.matchMedia('(pointer: coarse)').matches) {
-    document.body.classList.add('touch-device');
-    return;
-  }
-  let rx = 0, ry = 0, tx = 0, ty = 0;
-  document.addEventListener('mousemove', (e) => {
-    tx = e.clientX; ty = e.clientY;
-    dot.style.left = `${tx}px`;
-    dot.style.top = `${ty}px`;
-  });
-  function animateRing() {
-    rx += (tx - rx) * 0.18;
-    ry += (ty - ry) * 0.18;
-    ring.style.left = `${rx}px`;
-    ring.style.top = `${ry}px`;
-    requestAnimationFrame(animateRing);
-  }
-  animateRing();
-  document.addEventListener('mouseover', (e) => {
-    if (e.target.closest('button, a, .var-chip, .provider-card, .lead-tab, input, select, textarea, .nav-link')) {
-      document.body.classList.add('cursor-hover');
-    }
-  });
-  document.addEventListener('mouseout', (e) => {
-    if (e.target.closest('button, a, .var-chip, .provider-card, .lead-tab, input, select, textarea, .nav-link')) {
-      document.body.classList.remove('cursor-hover');
-    }
-  });
-})();
+/* Custom cursor removed for performance */

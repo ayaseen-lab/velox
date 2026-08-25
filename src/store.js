@@ -52,6 +52,11 @@ function todayLocal() {
   return new Date().toLocaleDateString('en-CA');
 }
 
+function toLocalDate(iso) {
+  if (!iso) return '';
+  return new Date(iso).toLocaleDateString('en-CA');
+}
+
 function nextId(data, table) {
   data._counters[table] = (data._counters[table] || 0) + 1;
   return data._counters[table];
@@ -104,6 +109,7 @@ function addContact(email, fields = {}, listId = 'list1') {
       city: fields.city || '',
       country: fields.country || '',
       industry: fields.industry || '',
+      phone: fields.phone || '',
       company_profile: fields.company_profile || '',
       list_id: listId,
       status: 'active',
@@ -136,6 +142,7 @@ function addContactsBulk(rows, listId = 'list1') {
           company: company || '', title: title || '',
           website: website || '', linkedin: linkedin || '',
           city: row.city || '', country: row.country || '', industry: row.industry || '',
+          phone: row.phone || '',
           company_profile: row.company_profile || '',
           list_id: listId,
           status: 'active', created_at: now(),
@@ -176,20 +183,28 @@ function suppressContact(contactId, status, reason) {
   });
 }
 
+function buildGloballySentEmailSet(data) {
+  const sent = new Set();
+  for (const log of data.send_log) {
+    if (log.status === 'sent' && log.email) sent.add(log.email.toLowerCase());
+  }
+  for (const q of data.send_queue) {
+    if (q.status !== 'sent') continue;
+    const contact = data.contacts.find(c => c.id === q.contact_id);
+    if (contact?.email) sent.add(contact.email.toLowerCase());
+  }
+  return sent;
+}
+
+function wasEmailSentGlobally(email) {
+  if (!email) return false;
+  const key = email.toLowerCase();
+  return withStoreRead((data) => buildGloballySentEmailSet(data).has(key));
+}
+
 function getSentEmailsForList(listId) {
   return withStoreRead((data) => {
-    const sent = new Set();
-    for (const log of data.send_log) {
-      if (log.status === 'sent' && log.list_id === listId) {
-        sent.add(log.email.toLowerCase());
-      }
-    }
-    for (const q of data.send_queue) {
-      if (q.status === 'sent') {
-        const contact = data.contacts.find(c => c.id === q.contact_id);
-        if (contact?.list_id === listId) sent.add(contact.email.toLowerCase());
-      }
-    }
+    const sent = buildGloballySentEmailSet(data);
     return sent;
   });
 }
@@ -204,20 +219,7 @@ function getActiveContactIds(listId = null) {
 
 function getEligibleContactIds(listId, { skipAlreadySent = true } = {}) {
   return withStoreRead((data) => {
-    const sentEmails = new Set();
-    if (skipAlreadySent) {
-      for (const log of data.send_log) {
-        if (log.status === 'sent' && log.list_id === listId) {
-          sentEmails.add(log.email.toLowerCase());
-        }
-      }
-      for (const q of data.send_queue) {
-        if (q.status === 'sent') {
-          const contact = data.contacts.find(c => c.id === q.contact_id);
-          if (contact?.list_id === listId) sentEmails.add(contact.email.toLowerCase());
-        }
-      }
-    }
+    const sentEmails = skipAlreadySent ? buildGloballySentEmailSet(data) : new Set();
     return data.contacts
       .filter(c => c.list_id === listId && c.status === 'active')
       .filter(c => !skipAlreadySent || !sentEmails.has(c.email.toLowerCase()))
@@ -345,22 +347,20 @@ function queueCampaign(campaignId, contactIds, { allowResend = false } = {}) {
     const camp = data.campaigns.find(c => c.id === campaignId);
     const listId = camp?.list_id || 'list1';
     const isFollowUp = allowResend || camp?.campaign_type === 'follow_up';
+    const sentEmails = isFollowUp ? null : buildGloballySentEmailSet(data);
+    const queuedContactIds = new Set(
+      data.send_queue.filter(q => q.campaign_id === campaignId).map(q => q.contact_id)
+    );
     let added = 0;
 
     for (const contactId of contactIds) {
       const contact = data.contacts.find(c => c.id === contactId);
       if (!contact || contact.status !== 'active') continue;
 
-      const alreadyQueued = data.send_queue.some(q =>
-        q.campaign_id === campaignId && q.contact_id === contactId
-      );
-      if (alreadyQueued) continue;
+      if (queuedContactIds.has(contactId)) continue;
 
       if (!isFollowUp) {
-        const alreadySent = data.send_log.some(l =>
-          l.status === 'sent' && l.email.toLowerCase() === contact.email.toLowerCase() && l.list_id === listId
-        );
-        if (alreadySent) continue;
+        if (sentEmails.has(contact.email.toLowerCase())) continue;
       } else {
         const alreadySentFollowUp = data.send_log.some(l =>
           l.status === 'sent' && l.campaign_id === campaignId && l.contact_id === contactId
@@ -379,6 +379,7 @@ function queueCampaign(campaignId, contactIds, { allowResend = false } = {}) {
         sent_at: null,
         is_follow_up: !!isFollowUp,
       });
+      queuedContactIds.add(contactId);
       added++;
     }
 
@@ -396,7 +397,12 @@ function getPendingQueue(limit, accountId = null) {
     const items = data.send_queue
       .filter(q => q.status === 'pending')
       .filter(q => !q.deferred_until || new Date(q.deferred_until).getTime() <= now)
-      .sort((a, b) => a.id - b.id);
+      .sort((a, b) => {
+        const ra = a.retry_count || 0;
+        const rb = b.retry_count || 0;
+        if (ra !== rb) return ra - rb; // fresh items first
+        return b.id - a.id; // newer campaigns next
+      });
 
     const result = [];
     for (const q of items) {
@@ -435,6 +441,72 @@ function getPendingQueue(limit, accountId = null) {
   });
 }
 
+function restoreTransientBlockedContacts(listIds = null) {
+  return withStore((data) => {
+    const lists = listIds ? new Set(listIds) : null;
+    let restored = 0;
+    for (const contact of data.contacts) {
+      if (contact.status !== 'blocked' && contact.status !== 'bounced') continue;
+      if (lists && !lists.has(contact.list_id)) continue;
+      const reason = (contact.failure_reason || '').toLowerCase();
+      const transient =
+        reason.includes('timed out') ||
+        reason.includes('timeout') ||
+        reason.includes('enetunreach') ||
+        reason.includes('econn') ||
+        reason.includes('connect ') ||
+        reason.includes('lookup failure') ||
+        reason.includes('451 4.3.0') ||
+        reason.includes('network') ||
+        reason.includes('temporary');
+      if (!transient) continue;
+      contact.status = 'active';
+      contact.failure_reason = null;
+      contact.suppressed_at = null;
+      restored++;
+    }
+    return restored;
+  });
+}
+
+function requeueFailedActiveForAccount(accountId, { includeLookupFailures = true } = {}) {
+  return withStore((data) => {
+    const sentEmails = buildGloballySentEmailSet(data);
+    let added = 0;
+    const campaignIds = new Set();
+
+    for (const q of data.send_queue) {
+      const camp = data.campaigns.find(c => c.id === q.campaign_id);
+      const smtpId = q.smtp_account_id || camp?.smtp_account_id;
+      if (smtpId !== accountId) continue;
+      if (q.status !== 'failed' && q.status !== 'skipped') continue;
+      if (!includeLookupFailures && /lookup failure|451 4\.3\.0/i.test(q.error_message || '')) continue;
+
+      const contact = data.contacts.find(c => c.id === q.contact_id);
+      if (!contact || contact.status !== 'active') continue;
+      if (sentEmails.has((contact.email || '').toLowerCase())) continue;
+
+      q.status = 'pending';
+      q.error_message = null;
+      q.retry_count = 0;
+      q.deferred_until = null;
+      q.sent_at = null;
+      added++;
+      if (camp) campaignIds.add(camp.id);
+    }
+
+    for (const id of campaignIds) {
+      const camp = data.campaigns.find(c => c.id === id);
+      if (camp) {
+        camp.status = 'sending';
+        camp.completed_at = null;
+      }
+    }
+
+    return added;
+  });
+}
+
 function getPendingCount(accountId = null) {
   return withStoreRead((data) => data.send_queue.filter(q => {
     if (q.status !== 'pending') return false;
@@ -460,6 +532,14 @@ function requeueItem(queueId, errorMessage) {
       q.error_message = errorMessage;
       q.retry_count = (q.retry_count || 0) + 1;
     }
+  });
+}
+
+function bumpQueueItemToEnd(queueId) {
+  withStore((data) => {
+    const q = data.send_queue.find(item => item.id === queueId);
+    if (!q) return;
+    q.id = nextId(data, 'send_queue');
   });
 }
 
@@ -529,6 +609,47 @@ function pauseCampaignsForAccount(accountId) {
   });
 }
 
+function markQueueSkippedDuplicate(queueId, campaignId, contactId, email, meta = {}) {
+  withStore((data) => {
+    const q = data.send_queue.find(item => item.id === queueId);
+    if (q) {
+      q.status = 'skipped';
+      q.error_message = 'Skipped — already sent to this email';
+      q.sent_at = now();
+    }
+    data.send_log.push({
+      id: nextId(data, 'send_log'),
+      campaign_id: campaignId,
+      contact_id: contactId,
+      email,
+      status: 'skipped',
+      failure_type: 'duplicate',
+      error_message: 'Skipped — already sent to this email',
+      sent_at: now(),
+      smtp_account_id: meta.smtp_account_id || q?.smtp_account_id || 'account1',
+      list_id: meta.list_id || q?.list_id || data.contacts.find(c => c.id === contactId)?.list_id || 'list1',
+    });
+  });
+}
+
+function purgeDuplicatePendingQueue() {
+  return withStore((data) => {
+    const sent = buildGloballySentEmailSet(data);
+    let skipped = 0;
+    for (const q of data.send_queue) {
+      if (q.status !== 'pending') continue;
+      const contact = data.contacts.find(c => c.id === q.contact_id);
+      const email = contact?.email?.toLowerCase();
+      if (!email || !sent.has(email)) continue;
+      q.status = 'skipped';
+      q.error_message = 'Skipped — already sent to this email';
+      q.sent_at = now();
+      skipped++;
+    }
+    return skipped;
+  });
+}
+
 function markSent(queueId, campaignId, contactId, email, meta = {}) {
   withStore((data) => {
     const q = data.send_queue.find(q => q.id === queueId);
@@ -589,7 +710,7 @@ function getTodaySentCount(accountId = null) {
   return withStoreRead((data) => {
     const today = todayLocal();
     return data.send_log.filter(l => {
-      if (l.status !== 'sent' || l.sent_at.slice(0, 10) !== today) return false;
+      if (l.status !== 'sent' || toLocalDate(l.sent_at) !== today) return false;
       if (accountId) return l.smtp_account_id === accountId;
       return true;
     }).length;
@@ -618,7 +739,7 @@ function getLast7Days() {
     const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
     for (const log of data.send_log) {
       if (log.status !== 'sent' || new Date(log.sent_at) < cutoff) continue;
-      const day = log.sent_at.slice(0, 10);
+      const day = toLocalDate(log.sent_at);
       days[day] = (days[day] || 0) + 1;
     }
     return Object.entries(days).sort(([a], [b]) => a.localeCompare(b)).map(([day, sent]) => ({ day, sent }));
@@ -706,6 +827,31 @@ function setLeadProviderKey(providerId, apiKey) {
   });
 }
 
+function getAccountDailyLimits() {
+  return withStoreRead((data) => ({ ...(data.meta?.account_daily_limits || {}) }));
+}
+
+function getAccountDailyLimit(accountId) {
+  if (!accountId) return null;
+  const limits = getAccountDailyLimits();
+  const value = limits[accountId];
+  return Number.isFinite(value) ? value : null;
+}
+
+function setAccountDailyLimit(accountId, dailyLimit) {
+  if (!accountId) throw new Error('Account id is required');
+  const limit = parseInt(dailyLimit, 10);
+  if (!Number.isFinite(limit) || limit < 1 || limit > 10000) {
+    throw new Error('Daily limit must be a number between 1 and 10000');
+  }
+  return withStore((data) => {
+    const limits = { ...(data.meta?.account_daily_limits || {}) };
+    limits[accountId] = limit;
+    data.meta = { ...(data.meta || {}), account_daily_limits: limits };
+    return limit;
+  });
+}
+
 function getSavedSmtpAccounts() {
   return withStoreRead((data) => (data.meta?.saved_smtp_accounts || []).map(a => ({
     ...a,
@@ -782,21 +928,27 @@ function getQueueProgress() {
       .filter(l => l.status === 'sent')
       .sort((a, b) => new Date(b.sent_at) - new Date(a.sent_at))[0];
 
-    const activeCampaigns = data.campaigns
-      .filter(c => ['sending', 'queued', 'paused'].includes(c.status) && c.sent_count < c.total_recipients)
+    const allCampaigns = data.campaigns
+      .slice()
+      .sort((a, b) => b.id - a.id)
       .map(c => ({
         id: c.id,
         name: c.name,
         status: c.status,
         smtp_account_id: c.smtp_account_id || 'account1',
         list_id: c.list_id || 'list1',
-        sent: c.sent_count,
-        total: c.total_recipients,
+        sent: c.sent_count || 0,
+        failed: c.failed_count || 0,
+        total: c.total_recipients || 0,
         pending: data.send_queue.filter(q => q.campaign_id === c.id && q.status === 'pending').length,
         percentComplete: c.total_recipients > 0
-          ? Math.round((c.sent_count / c.total_recipients) * 100)
+          ? Math.round(((c.sent_count || 0) / c.total_recipients) * 100)
           : 0,
       }));
+
+    const activeCampaigns = allCampaigns.filter(c =>
+      ['sending', 'queued', 'paused'].includes(c.status) && c.sent < c.total
+    );
 
     return {
       total,
@@ -809,6 +961,7 @@ function getQueueProgress() {
       lastSentEmail: lastSentLog?.email || null,
       lastSentAt: lastSentLog?.sent_at || null,
       percentComplete: total > 0 ? Math.round((sent / total) * 100) : 0,
+      campaigns: allCampaigns,
       activeCampaigns,
       activeCampaign: activeCampaigns[0] || null,
     };
@@ -820,7 +973,7 @@ function resumeSendingCampaigns() {
     for (const camp of data.campaigns) {
       if (camp.status === 'paused') {
         const hasPending = data.send_queue.some(q => q.campaign_id === camp.id && q.status === 'pending');
-        if (hasPending) camp.status = 'queued';
+        if (hasPending) camp.status = 'sending';
       }
     }
   });
@@ -876,7 +1029,7 @@ function getAnalytics() {
     const cutoff = Date.now() - 14 * 24 * 60 * 60 * 1000;
     for (const log of logs) {
       if (new Date(log.sent_at) < cutoff) continue;
-      const day = log.sent_at.slice(0, 10);
+      const day = toLocalDate(log.sent_at);
       if (!daily14[day]) daily14[day] = { day, sent: 0, failed: 0 };
       if (log.status === 'sent') daily14[day].sent++;
       else if (log.status === 'failed') daily14[day].failed++;
@@ -901,8 +1054,8 @@ function getAnalytics() {
       completed_at: c.completed_at,
     })).sort((a, b) => b.id - a.id);
 
-    const todaySent = logs.filter(l => l.status === 'sent' && l.sent_at.slice(0, 10) === today).length;
-    const todayFailed = logs.filter(l => l.status === 'failed' && l.sent_at.slice(0, 10) === today).length;
+    const todaySent = logs.filter(l => l.status === 'sent' && toLocalDate(l.sent_at) === today).length;
+    const todayFailed = logs.filter(l => l.status === 'failed' && toLocalDate(l.sent_at) === today).length;
 
     const replies = data.replies || [];
 
@@ -959,13 +1112,15 @@ module.exports = {
   getActiveContactIds, getEligibleContactIds, getSuccessfulContactIds, getCampaignSentCount, getContactCounts, getAllListCounts,
   suppressContact, getSentEmailsForList,
   getCampaigns, getCampaign, createCampaign, updateCampaign, setCampaignStatus, getCampaignsByStatus,
-  queueCampaign, getPendingQueue, getPendingCount, getQueueRetries, requeueItem, deferQueueItem,
+  queueCampaign, getPendingQueue, getPendingCount, getQueueRetries, requeueItem, bumpQueueItemToEnd, deferQueueItem,
+  requeueFailedActiveForAccount, restoreTransientBlockedContacts,
   deferBlockedQueueItems, getAccountQuotaState, setAccountQuotaState,
   pauseAllCampaigns, pauseCampaignsForAccount,
-  markSent, markFailed, updateCampaignStatuses,
+  markSent, markFailed, markQueueSkippedDuplicate, purgeDuplicatePendingQueue, wasEmailSentGlobally, updateCampaignStatuses,
   getTodaySentCount, getRemainingToday, getRecentLogs, getLast7Days, getCampaignStatusCounts,
   getMeta, setMeta, getCustomVariables, setCustomVariables, addCustomVariable, deleteCustomVariable,
   getLeadProviderKeys, getLeadProviderKey, setLeadProviderKey,
+  getAccountDailyLimits, getAccountDailyLimit, setAccountDailyLimit,
   getSavedSmtpAccounts, saveSmtpAccount, getSavedSmtpAccountRaw, deleteSavedSmtpAccount,
   getQueueProgress, resumeSendingCampaigns, getAnalytics, markReply, markBounce,
 };
