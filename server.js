@@ -170,6 +170,48 @@ app.post('/api/smtp/test', async (req, res) => {
   }
 });
 
+app.get('/api/smtp/diag', async (req, res) => {
+  const net = require('net');
+  const dnsPromises = require('dns').promises;
+  const cfg = getSmtpConfig(req.query.account || 'account1');
+  const host = cfg.host || 'smtp.hostinger.com';
+  const lookup = await dnsPromises.lookup(host, { all: true, verbatim: false }).catch((e) => ({ error: e.message }));
+  const targets = [
+    [host, cfg.port || 587],
+    [host, 465],
+    [host, 2525],
+    ['imap.hostinger.com', 993],
+    ['smtp.gmail.com', 587],
+  ];
+  const probes = {};
+  for (const [h, p] of targets) {
+    probes[`${h}:${p}`] = await new Promise((resolve) => {
+      const socket = net.connect({ host: h, port: p, family: 4 });
+      const timer = setTimeout(() => {
+        socket.destroy();
+        resolve('timeout');
+      }, 5000);
+      socket.on('connect', () => {
+        clearTimeout(timer);
+        socket.end();
+        resolve('open');
+      });
+      socket.on('error', (e) => {
+        clearTimeout(timer);
+        resolve(e.code || e.message);
+      });
+    });
+  }
+  res.json({
+    host,
+    port: cfg.port,
+    secure: cfg.secure,
+    user: cfg.user,
+    lookup,
+    probes,
+  });
+});
+
 app.get('/api/contacts', (req, res) => {
   const { search, page = 1, limit = 10000, list_id } = req.query;
   res.json(store.getContacts({
