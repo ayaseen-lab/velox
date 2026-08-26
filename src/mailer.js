@@ -247,9 +247,10 @@ function getAccountSignature(accountId) {
   const email = acc.email;
   const siteUrl = 'https://laneforge.xynovix.com';
   const siteLabel = 'laneforge.xynovix.com';
+  const font = "font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.35;color:#222222;";
   return {
-    html: `<p style="margin:28px 0 0;font-size:14px;line-height:1.55;color:#222;">${escapeHtml(name)}<br>Business Development<br>LaneForge Dispatch<br><a href="${siteUrl}" style="color:#222;">${siteLabel}</a><br><a href="mailto:${escapeHtml(email)}" style="color:#222;text-decoration:none;">${escapeHtml(email)}</a></p>`,
-    text: `\n\n${name}\nBusiness Development\nLaneForge Dispatch\n${siteUrl}\n${email}`,
+    html: `<p style="margin:12px 0 0;${font}">Cheers,<br>${escapeHtml(name)}<br>LaneForge Dispatch<br><a href="${siteUrl}" style="color:#222222;text-decoration:none;">${siteLabel}</a><br><a href="mailto:${escapeHtml(email)}" style="color:#222222;text-decoration:none;">${escapeHtml(email)}</a></p>`,
+    text: `\nCheers,\n${name}\nLaneForge Dispatch\n${siteUrl}\n${email}`,
   };
 }
 

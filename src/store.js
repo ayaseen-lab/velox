@@ -946,6 +946,24 @@ function setAccountDailyLimit(accountId, dailyLimit) {
   });
 }
 
+function getAccountSendDelays() {
+  return withStoreRead((data) => ({ ...(data.meta?.account_send_delays || {}) }));
+}
+
+function setAccountSendDelay(accountId, sendDelayMs) {
+  if (!accountId) throw new Error('Account id is required');
+  const delay = parseInt(sendDelayMs, 10);
+  if (!Number.isFinite(delay) || delay < 0 || delay > 600000) {
+    throw new Error('Send delay must be between 0 and 600000 ms');
+  }
+  return withStore((data) => {
+    const delays = { ...(data.meta?.account_send_delays || {}) };
+    delays[accountId] = delay;
+    data.meta = { ...(data.meta || {}), account_send_delays: delays };
+    return delay;
+  });
+}
+
 function getSavedSmtpAccounts() {
   return withStoreRead((data) => (data.meta?.saved_smtp_accounts || []).map(a => ({
     ...a,
@@ -1236,6 +1254,7 @@ module.exports = {
   getMeta, setMeta, getCustomVariables, setCustomVariables, addCustomVariable, deleteCustomVariable,
   getLeadProviderKeys, getLeadProviderKey, setLeadProviderKey,
   getAccountDailyLimits, getAccountDailyLimit, setAccountDailyLimit,
+  getAccountSendDelays, setAccountSendDelay,
   getSavedSmtpAccounts, saveSmtpAccount, getSavedSmtpAccountRaw, deleteSavedSmtpAccount,
   getQueueProgress, resumeSendingCampaigns, getAnalytics, markReply, markBounce,
   flushStore,

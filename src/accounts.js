@@ -55,7 +55,7 @@ function loadAccounts() {
     port: parseInt(process.env.SMTP_ACCOUNT_1_PORT || process.env.SMTP_PORT || '587', 10),
     secure: (process.env.SMTP_ACCOUNT_1_SECURE || process.env.SMTP_SECURE) === 'true',
     dailyLimit: parseInt(process.env.SMTP_ACCOUNT_1_DAILY_LIMIT || process.env.DAILY_LIMIT || '5000', 10),
-    sendDelayMs: parseInt(process.env.SMTP_ACCOUNT_1_DELAY_MS || process.env.SEND_DELAY_MS || '2000', 10),
+    sendDelayMs: parseInt(process.env.SMTP_ACCOUNT_1_DELAY_MS || process.env.SEND_DELAY_MS || '1000', 10),
     protected: false,
   });
   if (account1) accounts.push(account1);
@@ -128,17 +128,22 @@ function loadAccounts() {
   if (account6) accounts.push(account6);
 
   const overrides = store.getAccountDailyLimits();
+  const delayOverrides = store.getAccountSendDelays();
   for (const acc of accounts) {
-    const override = overrides[acc.id];
-    if (Number.isFinite(override) && override > 0) {
-      acc.dailyLimit = override;
-    }
     const warmup = getWarmupPlan(acc.id);
     if (warmup) {
       acc.warmup = warmup;
       acc.dailyLimit = Math.min(acc.dailyLimit, warmup.dailyLimit);
       acc.sendDelayMs = Math.max(acc.sendDelayMs, warmup.delayMs);
       acc.protected = true;
+    }
+    const override = overrides[acc.id];
+    if (Number.isFinite(override) && override > 0) {
+      acc.dailyLimit = override;
+    }
+    const delayOverride = delayOverrides[acc.id];
+    if (Number.isFinite(delayOverride) && delayOverride >= 0) {
+      acc.sendDelayMs = delayOverride;
     }
   }
 
@@ -165,6 +170,14 @@ function updateAccountDailyLimit(accountId, dailyLimit) {
   return { ...getAccount(accountId), dailyLimit: limit };
 }
 
+function updateAccountSendDelay(accountId, sendDelayMs) {
+  const acc = getAccount(accountId);
+  if (!acc) throw new Error('Account not found');
+  const delay = store.setAccountSendDelay(accountId, sendDelayMs);
+  resetAccountsCache();
+  return { ...getAccount(accountId), sendDelayMs: delay };
+}
+
 function getAccount(id) {
   return getAccounts().find(a => a.id === id) || null;
 }
@@ -189,4 +202,5 @@ module.exports = {
   getDefaultAccount,
   resetAccountsCache,
   updateAccountDailyLimit,
+  updateAccountSendDelay,
 };

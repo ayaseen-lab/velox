@@ -20,7 +20,7 @@ const cron = require('node-cron');
 
 const { uploadsDir, attachmentsDir, isServerless } = require('./src/paths');
 const store = require('./src/store');
-const { getAccounts, getAccount, getAccountByList, updateAccountDailyLimit } = require('./src/accounts');
+const { getAccounts, getAccount, getAccountByList, updateAccountDailyLimit, updateAccountSendDelay } = require('./src/accounts');
 const { validateCampaign, htmlToPlain } = require('./src/email-utils');
 const {
   getSmtpConfig,
@@ -121,6 +121,16 @@ app.get('/api/accounts', (req, res) => {
 app.patch('/api/accounts/:id/daily-limit', (req, res) => {
   try {
     const updated = updateAccountDailyLimit(req.params.id, req.body?.dailyLimit);
+    const status = getAccountStatuses().find(a => a.id === updated.id);
+    res.json({ success: true, account: status || updated });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.patch('/api/accounts/:id/send-delay', (req, res) => {
+  try {
+    const updated = updateAccountSendDelay(req.params.id, req.body?.sendDelayMs);
     const status = getAccountStatuses().find(a => a.id === updated.id);
     res.json({ success: true, account: status || updated });
   } catch (err) {

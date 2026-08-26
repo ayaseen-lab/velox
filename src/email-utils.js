@@ -25,7 +25,7 @@ function wrapHtmlEmail(htmlBody, { preheader = '', fromEmail = '', signatureHtml
     ? `<p style="margin:16px 0 0;font-size:12px;color:#666;">If this is not relevant, reply and I will not follow up.</p>`
     : '';
 
-  return `<div style="font-family:Georgia,'Times New Roman',serif;font-size:15px;line-height:1.55;color:#222222;">${lead}${htmlBody}${signatureHtml || ''}${unsub}</div>`;
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.45;color:#222222;">${lead}${htmlBody}${signatureHtml || ''}${unsub}</div>`;
 }
 
 const SPAM_WORDS = [
