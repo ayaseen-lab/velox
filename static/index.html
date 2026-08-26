@@ -81,7 +81,7 @@
             <button type="button" class="list-tab active" data-test-panel="dashboard" data-test-mode="quick">Quick Test</button>
             <button type="button" class="list-tab" data-test-panel="dashboard" data-test-mode="manual">Manual Test</button>
           </div>
-          <p class="hint" id="dashQuickTestHint">Uses default sample contact (Alex Morgan, VP Engineering at Example Technologies).</p>
+          <p class="hint" id="dashQuickTestHint">Uses a real carrier sample (Sherika Rogers, Owner at Inna Gee 365 LLC, DOT 4504797).</p>
           <div id="dashManualTestFields" class="manual-test-fields hidden">
             <div class="form-row">
               <div class="form-group"><label>First Name *</label><input type="text" id="dashTestFirstName" placeholder="Alex"></div>
@@ -371,7 +371,7 @@
                 <button type="button" class="list-tab active" data-test-panel="compose" data-test-mode="quick">Quick Test</button>
                 <button type="button" class="list-tab" data-test-panel="compose" data-test-mode="manual">Manual Test</button>
               </div>
-              <p class="hint" id="composeQuickTestHint">Uses sample: Alex Morgan, VP Engineering at Example Technologies.</p>
+              <p class="hint" id="composeQuickTestHint">Uses sample: Sherika Rogers, Owner at Inna Gee 365 LLC (DOT 4504797 / MC1782591).</p>
               <div id="composeManualTestFields" class="manual-test-fields hidden">
                 <div class="form-row">
                   <div class="form-group"><label>First Name *</label><input type="text" id="testFirstName" placeholder="Alex"></div>
@@ -399,7 +399,7 @@
           <div class="compose-preview-panel">
             <div class="card preview-card">
               <h2>Email Preview</h2>
-              <p class="hint">Each recipient gets a unique opening line based on their title, company, and industry</p>
+              <p class="hint">Each recipient gets a unique opening line based on their name, company, DOT/MC, location, and fleet size</p>
               <div class="preview-inbox">
                 <div class="preview-inbox-row"><span class="preview-label">From</span><span id="previewFrom">—</span></div>
                 <div class="preview-inbox-row"><span class="preview-label">To</span><span id="previewTo">alex@example.com</span></div>
@@ -456,6 +456,9 @@
                   <th>Name</th>
                   <th>Title</th>
                   <th>Company</th>
+                  <th>DOT</th>
+                  <th>MC</th>
+                  <th>Location</th>
                   <th>Status</th>
                   <th>Reason</th>
                   <th></th>

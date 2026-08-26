@@ -5,7 +5,7 @@ let quillEditor = null;
 let charts = {};
 let lastSenderRunning = false;
 let selectedListId = 'list1';
-let selectedAccountId = 'account2';
+let selectedAccountId = 'account1';
 let loadedTemplateVersion = 0;
 let accountsData = [];
 let editingCampaignId = null;
@@ -637,6 +637,7 @@ async function loadComposePage() {
   try {
     await loadAccounts();
     if (accountsData.find(a => a.id === 'account2')) selectedAccountId = 'account2';
+    else if (accountsData[0]) selectedAccountId = accountsData[0].id;
     populateAccountSelect();
     document.getElementById('smtpAccountSelect').value = selectedAccountId;
     await updateComposeMeta();
@@ -717,11 +718,12 @@ function getTestSampleContact(panel) {
     return c;
   }
   return previewSampleContact || {
-    first_name: 'Alex', last_name: 'Morgan', name: 'Alex Morgan',
-    title: 'VP of Engineering', company: 'Example Technologies',
-    city: 'San Francisco', industry: 'Information Technology',
-    company_profile: 'Example Technologies builds cloud-native analytics tools for mid-market SaaS companies.',
-    email: 'alex@example.com',
+    first_name: 'Sherika', last_name: 'Rogers', name: 'Sherika Rogers',
+    title: 'Owner', company: 'Inna Gee 365 LLC',
+    city: 'Portsmouth', country: 'VA', industry: 'Motor Carrier of Property',
+    company_profile: 'Motor Carrier of Property. 1 driver. based in Portsmouth, VA',
+    email: 'ahmadjutt463@gmail.com',
+    dot: '4504797', mc: 'MC1782591', drivers: '1',
   };
 }
 
@@ -786,7 +788,7 @@ async function sendTestFromPanel(source) {
     formData.append('body', content.body);
     formData.append('preheader', content.preheader || data.preheader || '');
     formData.append('include_unsubscribe', document.getElementById('includeUnsubscribe')?.checked ?? false);
-    formData.append('smtp_account_id', selectedAccountId || 'account2');
+    formData.append('smtp_account_id', selectedAccountId || accountsData[0]?.id || 'account1');
     formData.append('sample_contact', JSON.stringify(sample));
     formData.append('test_to', sample.email);
     const attach = document.getElementById('campaignAttachment')?.files[0];
@@ -826,7 +828,7 @@ async function dashPreviewTest() {
         subject: content.subject,
         body: content.body,
         preheader: content.preheader,
-        smtp_account_id: 'account2',
+        smtp_account_id: selectedAccountId || accountsData[0]?.id || 'account1',
         sample_contact: sample,
       }),
     });
@@ -1058,7 +1060,7 @@ async function loadContacts(page = 1) {
     const tbody = document.getElementById('contactsTable');
 
     if (data.contacts.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No contacts in this list. Upload your .xlsx or .csv file.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10" class="empty-state">No contacts in this list. Upload your .xlsx or .csv file.</td></tr>';
     } else {
       tbody.innerHTML = data.contacts.map(c => `
         <tr>
@@ -1066,6 +1068,9 @@ async function loadContacts(page = 1) {
           <td>${escapeHtml(c.name || [c.first_name, c.last_name].filter(Boolean).join(' ') || '—')}</td>
           <td>${escapeHtml(c.title || '—')}</td>
           <td>${escapeHtml(c.company || '—')}</td>
+          <td>${escapeHtml(c.dot || '—')}</td>
+          <td>${escapeHtml(c.mc || '—')}</td>
+          <td>${escapeHtml([c.city, c.country].filter(Boolean).join(', ') || '—')}</td>
           <td><span class="status-badge ${c.status}">${c.status}</span></td>
           <td style="font-size:0.8rem;color:var(--text-muted)">${escapeHtml((c.failure_reason || '').slice(0, 60) || '—')}</td>
           <td><button class="btn btn-sm btn-danger" onclick="deleteContact(${c.id})">Delete</button></td>
@@ -1105,7 +1110,7 @@ document.getElementById('csvUpload').addEventListener('change', async (e) => {
     const res = await fetch('/api/contacts/upload', { method: 'POST', body: formData, credentials: 'same-origin' });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error);
-    toast(`Added ${data.added.toLocaleString()} to ${data.listLabel || selectedListId} (${data.skipped} duplicates skipped)`);
+    toast(`Added ${data.added.toLocaleString()} and updated ${(data.updated || 0).toLocaleString()} in ${data.listLabel || selectedListId}${data.skipped ? ` (${data.skipped} skipped)` : ''}`);
     document.getElementById('step2')?.classList.add('done');
     loadContacts();
   } catch (err) {

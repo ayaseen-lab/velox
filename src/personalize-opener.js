@@ -77,16 +77,38 @@ function dotPhrase(contact) {
   return digits || raw;
 }
 
+function mcPhrase(contact) {
+  const raw = clean(contact.mc || contact.mc_number || contact.all_active_mcs);
+  if (!raw) return '';
+  const first = raw.split(',')[0].trim();
+  if (/^mc/i.test(first)) return first.toUpperCase().replace(/\s+/g, '');
+  const digits = first.replace(/[^0-9]/g, '');
+  return digits ? `MC${digits}` : first;
+}
+
+function fleetPhrase(contact) {
+  const drivers = clean(contact.drivers);
+  const units = clean(contact.power_units);
+  if (drivers && drivers !== '0') {
+    return drivers === '1' ? '1 driver' : `${drivers} drivers`;
+  }
+  if (units && units !== '0') {
+    return units === '1' ? '1 truck' : `${units} trucks`;
+  }
+  return '';
+}
+
 function generatePersonalizedSubject(contact) {
   const first = firstName(contact);
   const company = companyPhrase(contact);
   const dot = dotPhrase(contact);
+  const mc = mcPhrase(contact);
   const email = contact.email || first;
 
-  if (company && dot) {
+  if (company && (dot || mc)) {
     return pickVariant(email + 'subj', [
       `${first} at ${company} — more revenue, less deadhead`,
-      `DOT ${dot}: real home time for ${company}`,
+      `${dot ? `DOT ${dot}` : mc}: real home time for ${company}`,
       `${company} — better lanes and Friday home loads`,
     ]);
   }
@@ -126,17 +148,21 @@ function generatePersonalizedOpener(contact) {
   const title = titlePhrase(contact);
   const company = companyPhrase(contact);
   const dot = dotPhrase(contact);
+  const mc = mcPhrase(contact);
+  const fleet = fleetPhrase(contact);
   const loc = locationLabel(contact);
   const email = contact.email || '';
   const locBit = loc ? ` out of ${loc}` : '';
   const roleBit = title ? ` as ${title}` : '';
   const companyBit = company ? ` at ${company}` : '';
-  const dotBit = dot ? ` (DOT ${dot})` : '';
+  const idBits = [dot && `DOT ${dot}`, mc].filter(Boolean).join(', ');
+  const idBit = idBits ? ` (${idBits})` : '';
+  const fleetBit = fleet ? ` with ${fleet}` : '';
 
   const withAll = [
-    `I came across ${company}${dotBit}${locBit} and wanted to reach out directly. At LaneForge Dispatch we help owner-operators and small carriers cut empty miles, land stronger-paying freight, and plan real Friday home time.`,
-    `Your operation${companyBit}${dotBit}${locBit} stood out. I am Marcus Hale with LaneForge Dispatch — we build dispatch around your truck, preferred lanes, and home-time goals instead of random load-board chasing.`,
-    `Reaching out${roleBit}${companyBit}${dotBit}. If empty miles and weak weekly planning are eating into your RPM, LaneForge can help stack better freight and position the truck for home by Friday.`,
+    `I came across ${company}${idBit}${locBit}${fleetBit} and wanted to reach out directly. At LaneForge Dispatch we help owner-operators and small carriers cut empty miles, land stronger-paying freight, and plan real Friday home time.`,
+    `Your operation${companyBit}${idBit}${locBit}${fleetBit} stood out. I am Marcus Hale with LaneForge Dispatch — we build dispatch around your truck, preferred lanes, and home-time goals instead of random load-board chasing.`,
+    `Reaching out${roleBit}${companyBit}${idBit}. If empty miles and weak weekly planning are eating into your RPM, LaneForge can help stack better freight and position the truck for home by Friday.`,
   ];
 
   const withCompany = [
@@ -146,8 +172,8 @@ function generatePersonalizedOpener(contact) {
   ];
 
   const withDot = [
-    `I saw DOT ${dot}${companyBit}${locBit} and thought a direct note made sense. LaneForge Dispatch helps carriers improve weekly revenue by cutting deadhead and planning lanes around home time.`,
-    `DOT ${dot} caught my attention${locBit}. We work with owner-operators and small fleets to build 2–3 reliable core lanes and keep the truck loaded with less downtime.`,
+    `I saw ${idBits || 'your authority'}${companyBit}${locBit}${fleetBit} and thought a direct note made sense. LaneForge Dispatch helps carriers improve weekly revenue by cutting deadhead and planning lanes around home time.`,
+    `${idBits || 'Your authority'} caught my attention${locBit}. We work with owner-operators and small fleets to build 2–3 reliable core lanes and keep the truck loaded with less downtime.`,
   ];
 
   const withTitle = [
@@ -162,9 +188,9 @@ function generatePersonalizedOpener(contact) {
   ];
 
   let variants;
-  if (company && (dot || title || loc)) variants = withAll;
+  if (company && (dot || mc || title || loc || fleet)) variants = withAll;
   else if (company) variants = withCompany;
-  else if (dot) variants = withDot;
+  else if (dot || mc) variants = withDot;
   else if (title) variants = withTitle;
   else variants = withNeither;
 
@@ -176,6 +202,7 @@ function generatePersonalizedClosing(contact) {
   const first = firstName(contact);
   const loc = locationLabel(contact);
   const dot = dotPhrase(contact);
+  const mc = mcPhrase(contact);
   const email = contact.email || '';
 
   if (company && loc) {
@@ -192,10 +219,11 @@ function generatePersonalizedClosing(contact) {
     ]);
   }
 
-  if (dot) {
+  if (dot || mc) {
+    const idLabel = [dot && `DOT ${dot}`, mc].filter(Boolean).join(' / ');
     return pickVariant(email + 'close', [
-      `For DOT ${dot}, reply with equipment type, current location, preferred lanes, and availability if you want to see how LaneForge would support the operation.`,
-      `If you want a dispatch plan built around DOT ${dot}, reply with equipment and preferred lanes and I will follow up personally.`,
+      `For ${idLabel}, reply with equipment type, current location, preferred lanes, and availability if you want to see how LaneForge would support the operation.`,
+      `If you want a dispatch plan built around ${idLabel}, reply with equipment and preferred lanes and I will follow up personally.`,
     ]);
   }
 
@@ -219,4 +247,6 @@ module.exports = {
   companyPhrase,
   titlePhrase,
   dotPhrase,
+  mcPhrase,
+  fleetPhrase,
 };

@@ -143,6 +143,40 @@ function getContacts({ search = '', page = 1, limit = 50, list_id } = {}) {
   });
 }
 
+function contactFieldsFromRow(row = {}) {
+  return {
+    name: row.name || [row.first_name, row.last_name].filter(Boolean).join(' ') || '',
+    first_name: row.first_name || '',
+    last_name: row.last_name || '',
+    company: row.company || '',
+    title: row.title || '',
+    website: row.website || '',
+    linkedin: row.linkedin || '',
+    city: row.city || '',
+    country: row.country || '',
+    zip: row.zip || '',
+    industry: row.industry || '',
+    phone: row.phone || '',
+    address: row.address || '',
+    mailing_address: row.mailing_address || '',
+    drivers: row.drivers || '',
+    power_units: row.power_units || '',
+    authority_status: row.authority_status || '',
+    dot_status: row.dot_status || '',
+    company_profile: row.company_profile || '',
+    dot: row.dot || '',
+    mc: row.mc || '',
+    all_active_mcs: row.all_active_mcs || '',
+  };
+}
+
+function mergeContactFields(contact, fields) {
+  for (const [key, value] of Object.entries(fields)) {
+    if (value !== '' && value != null) contact[key] = value;
+  }
+  return contact;
+}
+
 function addContact(email, fields = {}, listId = 'list1') {
   return withStore((data) => {
     const exists = data.contacts.find(c =>
@@ -152,19 +186,7 @@ function addContact(email, fields = {}, listId = 'list1') {
     const contact = {
       id: nextId(data, 'contacts'),
       email: email.trim(),
-      name: fields.name || '',
-      first_name: fields.first_name || '',
-      last_name: fields.last_name || '',
-      company: fields.company || '',
-      title: fields.title || '',
-      website: fields.website || '',
-      linkedin: fields.linkedin || '',
-      city: fields.city || '',
-      country: fields.country || '',
-      industry: fields.industry || '',
-      phone: fields.phone || '',
-      company_profile: fields.company_profile || '',
-      dot: fields.dot || '',
+      ...contactFieldsFromRow(fields),
       list_id: listId,
       status: 'active',
       created_at: now(),
@@ -176,14 +198,14 @@ function addContact(email, fields = {}, listId = 'list1') {
 
 function addContactsBulk(rows, listId = 'list1') {
   const result = withStore((data) => {
-    const existing = new Set(
-      data.contacts
-        .filter(c => c.list_id === listId)
-        .map(c => c.email.toLowerCase())
-    );
+    const byEmail = new Map();
+    for (const c of data.contacts) {
+      if (c.list_id === listId) byEmail.set(c.email.toLowerCase(), c);
+    }
     let added = 0;
+    let updated = 0;
     let skipped = 0;
-    const seen = new Set(existing);
+    const seen = new Set();
 
     for (const row of rows) {
       const email = (row.email || '').trim();
@@ -191,29 +213,24 @@ function addContactsBulk(rows, listId = 'list1') {
       const key = email.toLowerCase();
       if (seen.has(key)) { skipped++; continue; }
       seen.add(key);
+      const fields = contactFieldsFromRow(row);
+      const existing = byEmail.get(key);
+      if (existing) {
+        mergeContactFields(existing, fields);
+        updated++;
+        continue;
+      }
       data.contacts.push({
         id: nextId(data, 'contacts'),
         email,
-        name: row.name || [row.first_name, row.last_name].filter(Boolean).join(' '),
-        first_name: row.first_name || '',
-        last_name: row.last_name || '',
-        company: row.company || '',
-        title: row.title || '',
-        website: row.website || '',
-        linkedin: row.linkedin || '',
-        city: row.city || '',
-        country: row.country || '',
-        industry: row.industry || '',
-        phone: row.phone || '',
-        company_profile: row.company_profile || '',
-        dot: row.dot || '',
+        ...fields,
         list_id: listId,
         status: 'active',
         created_at: now(),
       });
       added++;
     }
-    return { added, skipped, listId };
+    return { added, updated, skipped, listId };
   });
   flushStore();
   return result;
@@ -500,7 +517,13 @@ function getPendingQueue(limit, accountId = null) {
         country: contact.country || '',
         industry: contact.industry || '',
         company_profile: contact.company_profile || '',
+        zip: contact.zip || '',
+        address: contact.address || '',
+        drivers: contact.drivers || '',
+        power_units: contact.power_units || '',
+        authority_status: contact.authority_status || '',
         dot: contact.dot || '',
+        mc: contact.mc || '',
         subject: camp.subject, body_html: camp.body_html, body_text: camp.body_text,
         preheader: camp.preheader || '', include_unsubscribe: camp.include_unsubscribe === true,
         attachment: camp.attachment || null,

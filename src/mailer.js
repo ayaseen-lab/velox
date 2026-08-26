@@ -166,8 +166,10 @@ function personalize(text, contact) {
   const title = toDisplayCase(c.title);
   const city = toDisplayCase(c.city);
   const country = String(c.country || '').trim();
-  const location = city || country || '';
+  const location = [city, country].filter(Boolean).join(', ') || city || country;
   const dot = String(c.dot || c.usdot || c.dot_number || '').replace(/[^0-9]/g, '') || String(c.dot || '').trim();
+  const mcRaw = String(c.mc || '').trim();
+  const mc = mcRaw ? ( /^mc/i.test(mcRaw) ? mcRaw.toUpperCase().replace(/\s+/g, '') : `MC${mcRaw.replace(/[^0-9]/g, '')}` ) : '';
 
   const map = {
     '{{first_name}}': first,
@@ -181,10 +183,18 @@ function personalize(text, contact) {
     '{{email}}': c.email || '',
     '{{city}}': city,
     '{{country}}': country,
+    '{{state}}': country,
+    '{{zip}}': String(c.zip || '').trim(),
     '{{location}}': location,
+    '{{address}}': String(c.address || '').trim(),
     '{{industry}}': (c.industry || '').trim(),
+    '{{phone}}': String(c.phone || '').trim(),
     '{{dot}}': dot,
     '{{usdot}}': dot,
+    '{{mc}}': mc,
+    '{{drivers}}': String(c.drivers || '').trim(),
+    '{{power_units}}': String(c.power_units || '').trim(),
+    '{{authority_status}}': String(c.authority_status || '').trim(),
     '{{personalized_opener}}': generatePersonalizedOpener(c),
     '{{personalized_closing}}': generatePersonalizedClosing(c),
     '{{personalized_subject}}': generatePersonalizedSubject(c),
@@ -264,8 +274,10 @@ function buildEmailContent(campaign, contact, accountId) {
 
 function renderPreview(campaign, sampleContact, accountId) {
   const contact = sampleContact || {
-    first_name: 'Alex', last_name: 'Morgan', name: 'Alex Morgan',
-    title: 'CTO', company: 'Example Technologies', email: 'alex@example.com',
+    first_name: 'Sherika', last_name: 'Rogers', name: 'Sherika Rogers',
+    title: 'Owner', company: 'Inna Gee 365 LLC',
+    city: 'Portsmouth', country: 'VA', email: 'ahmadjutt463@gmail.com',
+    dot: '4504797', mc: 'MC1782591', drivers: '1',
   };
   const { subject, html, text, cfg } = buildEmailContent(campaign, contact, accountId);
   return {

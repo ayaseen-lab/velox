@@ -301,7 +301,7 @@ app.get('/api/campaigns/templates/:id', (req, res) => {
 app.post('/api/campaigns/test-email', attachmentUpload.single('attachment'), async (req, res) => {
   const { subject, body, preheader, include_unsubscribe, smtp_account_id, sample_contact, test_to } = req.body;
   const bodyContent = (body || '').trim();
-  const accountId = smtp_account_id || 'account2';
+  const accountId = smtp_account_id || getAccounts()[0]?.id || 'account1';
 
   if (!subject || !bodyContent) {
     if (req.file?.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
