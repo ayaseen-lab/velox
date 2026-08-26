@@ -58,27 +58,36 @@ function getSmtpConfig(accountId) {
   };
 }
 
+function smtpTransportOptions(cfg) {
+  const host = cfg.host;
+  const port = parseInt(cfg.port, 10) || 587;
+  const secure = cfg.secure === true || port === 465;
+  const auth = { user: cfg.user || cfg.email, pass: cfg.pass };
+  const opts = {
+    host,
+    port,
+    secure,
+    auth,
+    pool: false,
+    connectionTimeout: 20000,
+    greetingTimeout: 15000,
+    socketTimeout: 30000,
+    tls: {
+      minVersion: 'TLSv1.2',
+      servername: host,
+      rejectUnauthorized: true,
+    },
+  };
+  if (!secure) opts.requireTLS = true;
+  return opts;
+}
+
 function createTransporter(accountId) {
   const cfg = getSmtpConfig(accountId);
   if (!cfg.user || !cfg.pass) {
     throw new Error(`SMTP not configured for ${accountId}`);
   }
-  const auth = { user: cfg.user, pass: cfg.pass };
-  if (cfg.host === 'smtp.gmail.com') {
-    return nodemailer.createTransport({ service: 'gmail', auth, pool: false });
-  }
-  return nodemailer.createTransport({
-    host: cfg.host,
-    port: cfg.port,
-    secure: cfg.secure,
-    auth,
-    pool: true,
-    maxConnections: 1,
-    maxMessages: 200,
-    connectionTimeout: 15000,
-    greetingTimeout: 10000,
-    socketTimeout: 20000,
-  });
+  return nodemailer.createTransport(smtpTransportOptions(cfg));
 }
 
 function getTransporter(accountId) {
@@ -94,10 +103,32 @@ function resetTransporter(accountId = null) {
   Object.keys(transporters).forEach(k => delete transporters[k]);
 }
 
+function isTimeoutError(err) {
+  const msg = (err?.message || String(err || '')).toLowerCase();
+  return /timeout|timed out|etimedout|econnrefused|enotfound/.test(msg);
+}
+
 async function verifySmtp(accountId) {
   const id = accountId || getDefaultAccount()?.id;
-  await createTransporter(id).verify();
-  return true;
+  const cfg = getSmtpConfig(id);
+  try {
+    await createTransporter(id).verify();
+    return true;
+  } catch (err) {
+    const hostinger = (cfg.host || '').includes('hostinger');
+    if (hostinger && isTimeoutError(err) && cfg.port === 465) {
+      const fallback = nodemailer.createTransport(smtpTransportOptions({
+        ...cfg,
+        port: 587,
+        secure: false,
+      }));
+      await fallback.verify();
+      transporters[id] = fallback;
+      console.warn(`[${id}] SMTP 465 timed out; using 587 STARTTLS`);
+      return true;
+    }
+    throw err;
+  }
 }
 
 function personalize(text, contact) {
@@ -252,7 +283,7 @@ function accountHasPendingWork(accountId) {
   return store.getPendingCount(accountId) > 0;
 }
 
-async function sendOneEmail(campaign, contact, accountId) {
+async function sendOneEmail(campaign, contact, accountId, { waitForSent = false } = {}) {
   const cfg = getSmtpConfig(accountId);
   const t = getTransporter(accountId);
   const { subject, html, text } = buildEmailContent(campaign, contact, accountId);
@@ -291,19 +322,23 @@ async function sendOneEmail(campaign, contact, accountId) {
     }),
   ]);
 
-  try {
-    void saveCopyToSent(accountId, mailOptions).catch((err) => {
-      console.warn(`[${accountId}] Sent folder copy failed: ${err.message}`);
-    });
-  } catch (err) {
+  let savedToSent = false;
+  const sentPromise = saveCopyToSent(accountId, mailOptions).catch((err) => {
     console.warn(`[${accountId}] Sent folder copy failed: ${err.message}`);
+    return false;
+  });
+  if (waitForSent) {
+    savedToSent = await sentPromise;
+  } else {
+    void sentPromise;
   }
+  return { savedToSent };
 }
 
 async function sendTestEmail(campaign, testTo, sampleContact, accountId) {
   const contact = { ...sampleContact, email: testTo };
-  await sendOneEmail(campaign, contact, accountId || getDefaultAccount()?.id);
-  return { sentTo: testTo, previewAs: sampleContact.first_name };
+  const result = await sendOneEmail(campaign, contact, accountId || getDefaultAccount()?.id, { waitForSent: true });
+  return { sentTo: testTo, previewAs: sampleContact.first_name, savedToSent: !!result?.savedToSent };
 }
 
 const MAX_RETRIES = parseInt(process.env.MAX_RETRIES || '3', 10);
@@ -704,36 +739,42 @@ const defaultAccount = getDefaultAccount();
 const DAILY_LIMIT = defaultAccount?.dailyLimit || parseInt(process.env.DAILY_LIMIT || '490', 10);
 
 function createCustomTransporter(cfg) {
-  const auth = { user: cfg.email || cfg.user, pass: cfg.pass };
-  if (cfg.host === 'smtp.gmail.com') {
-    return nodemailer.createTransport({ service: 'gmail', auth, pool: false });
-  }
-  return nodemailer.createTransport({
+  return nodemailer.createTransport(smtpTransportOptions({
     host: cfg.host,
-    port: cfg.port || 587,
-    secure: !!cfg.secure,
-    auth,
-    pool: false,
-  });
+    port: cfg.port,
+    secure: cfg.secure,
+    user: cfg.email || cfg.user,
+    pass: cfg.pass,
+  }));
 }
 
 async function verifyCustomSmtp(cfg) {
   const t = createCustomTransporter(cfg);
-  await t.verify();
-  return true;
+  try {
+    await t.verify();
+    return true;
+  } catch (err) {
+    if ((cfg.host || '').includes('hostinger') && isTimeoutError(err) && parseInt(cfg.port, 10) === 465) {
+      const fallback = createCustomTransporter({ ...cfg, port: 587, secure: false });
+      await fallback.verify();
+      return true;
+    }
+    throw err;
+  }
 }
 
 async function sendTestWithCustomConfig(cfg, testTo) {
   const t = createCustomTransporter(cfg);
   const fromName = cfg.fromName || cfg.email?.split('@')[0] || 'Test';
   const fromEmail = cfg.email || cfg.user;
-  await t.sendMail({
+  const mailOptions = {
     from: `"${fromName}" <${fromEmail}>`,
     to: testTo,
     subject: 'Reachly — SMTP connection test',
     text: `This is a test email from Reachly.\n\nAccount: ${fromEmail}\nHost: ${cfg.host}:${cfg.port || 587}\n\nIf you received this, your SMTP configuration is working.`,
     html: `<p>This is a test email from <strong>Reachly</strong>.</p><p>Account: ${fromEmail}<br>Host: ${cfg.host}:${cfg.port || 587}</p><p>If you received this, your SMTP configuration is working.</p>`,
-  });
+  };
+  await t.sendMail(mailOptions);
   return { sentTo: testTo };
 }
 

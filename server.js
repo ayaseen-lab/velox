@@ -746,12 +746,18 @@ app.post('/api/email-config/test-send', async (req, res) => {
   if (!testTo) return res.status(400).json({ error: 'Test recipient email required' });
   try {
     if (account && getAccount(account)) {
-      await sendTestEmail({
+      const result = await sendTestEmail({
         subject: 'Reachly — SMTP test',
-        body_html: '<p>SMTP test successful.</p>',
-        body_text: 'SMTP test successful.',
-      }, testTo, { first_name: 'Test', email: testTo, company: 'Test Co', title: 'Tester' }, account);
-      return res.json({ success: true, message: `Test email sent to ${testTo}` });
+        body_html: '<p>SMTP test successful from Hostinger (<strong>marcus.laneforge@xynovix.com</strong>).</p><p>If you received this, the mailbox is sending correctly.</p>',
+        body_text: 'SMTP test successful from Hostinger (marcus.laneforge@xynovix.com).',
+      }, testTo, { first_name: 'Ahmad', email: testTo, company: 'Test Co', title: 'Tester' }, account);
+      return res.json({
+        success: true,
+        message: result.savedToSent
+          ? `Test email sent to ${testTo} and copied to the Hostinger Sent folder`
+          : `Test email sent to ${testTo}. Could not copy to Sent folder — check IMAP settings.`,
+        savedToSent: !!result.savedToSent,
+      });
     }
     const cfg = { host, port: parseInt(port, 10) || 587, secure: !!secure, email, pass, fromName };
     await sendTestWithCustomConfig(cfg, testTo);

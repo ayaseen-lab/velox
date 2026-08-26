@@ -4,6 +4,7 @@ const { getAccount } = require('./accounts');
 
 const SENT_CANDIDATES = [
   'INBOX.Sent',
+  'INBOX.Sent Mail',
   'Sent',
   '[Gmail]/Sent Mail',
   'Sent Items',

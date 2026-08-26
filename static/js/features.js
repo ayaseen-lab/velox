@@ -248,9 +248,17 @@ document.getElementById('smtpSaveAccount')?.addEventListener('click', async () =
 
 async function testEnvAccount(accountId) {
   try {
-    const res = await api('/email-config/test', { method: 'POST', body: JSON.stringify({ account: accountId }) });
-    toast(res.message);
+    const verify = await api('/email-config/test', { method: 'POST', body: JSON.stringify({ account: accountId }) });
+    toast(verify.message);
+    const testTo = document.getElementById('smtpTestTo')?.value.trim() || 'ahmadjutt463@gmail.com';
+    const sent = await api('/email-config/test-send', {
+      method: 'POST',
+      body: JSON.stringify({ account: accountId, test_to: testTo }),
+    });
+    showSmtpStatus(sent.message, true);
+    toast(sent.message);
   } catch (err) {
+    showSmtpStatus(err.message, false);
     toast(err.message, 'error');
   }
 }
