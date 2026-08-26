@@ -55,7 +55,7 @@ function loadAccounts() {
     port: parseInt(process.env.SMTP_ACCOUNT_1_PORT || process.env.SMTP_PORT || '587', 10),
     secure: (process.env.SMTP_ACCOUNT_1_SECURE || process.env.SMTP_SECURE) === 'true',
     dailyLimit: parseInt(process.env.SMTP_ACCOUNT_1_DAILY_LIMIT || process.env.DAILY_LIMIT || '5000', 10),
-    sendDelayMs: parseInt(process.env.SMTP_ACCOUNT_1_DELAY_MS || process.env.SEND_DELAY_MS || '1000', 10),
+    sendDelayMs: parseInt(process.env.SMTP_ACCOUNT_1_DELAY_MS || process.env.SEND_DELAY_MS || '100', 10),
     protected: false,
   });
   if (account1) accounts.push(account1);

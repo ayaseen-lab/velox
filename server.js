@@ -9,6 +9,9 @@ process.on('unhandledRejection', (err) => {
 process.on('uncaughtException', (err) => {
   console.warn('Uncaught exception (non-fatal):', err?.message || err);
 });
+process.on('uncaughtExceptionMonitor', (err) => {
+  console.warn('Uncaught exception monitor (non-fatal):', err?.message || err);
+});
 const express = require('express');
 const multer = require('multer');
 const { parseContactsCsv, parseContactsXlsx } = require('./src/import-contacts');

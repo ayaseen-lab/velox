@@ -5,6 +5,10 @@ const { dataDir, isServerless } = require('./paths');
 const dbPath = path.join(dataDir, 'store.json');
 let memory = null;
 let saveTimer = null;
+let persistInFlight = false;
+let persistQueued = false;
+let sentEmailCache = null;
+let storeCorrupt = false;
 
 const empty = () => ({
   contacts: [],
@@ -20,8 +24,23 @@ function load() {
   if (!fs.existsSync(dbPath)) return empty();
   try {
     const data = JSON.parse(fs.readFileSync(dbPath, 'utf-8'));
+    storeCorrupt = false;
     return migrateData(data);
-  } catch {
+  } catch (err) {
+    console.error('Failed to parse store.json:', err.message);
+    const bak = `${dbPath}.bak`;
+    if (fs.existsSync(bak)) {
+      try {
+        const data = JSON.parse(fs.readFileSync(bak, 'utf-8'));
+        console.warn('Recovered store from store.json.bak');
+        storeCorrupt = false;
+        return migrateData(data);
+      } catch (bakErr) {
+        console.error('Failed to parse store.json.bak:', bakErr.message);
+      }
+    }
+    storeCorrupt = true;
+    console.error('store.json is corrupt — refusing to overwrite the volume copy');
     return empty();
   }
 }
@@ -43,7 +62,25 @@ function migrateData(data) {
 }
 
 function persist(data) {
-  fs.writeFileSync(dbPath, JSON.stringify(data));
+  if (storeCorrupt) {
+    console.error('Refusing to persist: store was corrupt on load');
+    return;
+  }
+  let json;
+  try {
+    json = JSON.stringify(data);
+  } catch (err) {
+    console.error('Failed to serialize store:', err.message);
+    return;
+  }
+  const tmp = `${dbPath}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, json);
+  try {
+    fs.renameSync(tmp, dbPath);
+  } catch (err) {
+    try { fs.unlinkSync(tmp); } catch { /* ignore */ }
+    throw err;
+  }
 }
 
 function getMemory() {
@@ -51,20 +88,37 @@ function getMemory() {
   return memory;
 }
 
-function scheduleSave() {
-  if (isServerless) {
+function runPersist() {
+  if (persistInFlight) {
+    persistQueued = true;
+    return;
+  }
+  persistInFlight = true;
+  persistQueued = false;
+  try {
     persist(getMemory());
+  } catch (err) {
+    console.error('Failed to save store:', err.message);
+  } finally {
+    persistInFlight = false;
+    if (persistQueued) {
+      persistQueued = false;
+      scheduleSave();
+    }
+  }
+}
+
+function scheduleSave() {
+  if (storeCorrupt) return;
+  if (isServerless) {
+    runPersist();
     return;
   }
   if (saveTimer) return;
   saveTimer = setTimeout(() => {
     saveTimer = null;
-    try {
-      persist(getMemory());
-    } catch (err) {
-      console.error('Failed to save store:', err.message);
-    }
-  }, 80);
+    runPersist();
+  }, 400);
 }
 
 function flushStore() {
@@ -72,7 +126,12 @@ function flushStore() {
     clearTimeout(saveTimer);
     saveTimer = null;
   }
-  if (memory) persist(memory);
+  persistQueued = false;
+  if (memory && !storeCorrupt) {
+    try { persist(memory); } catch (err) {
+      console.error('Failed to flush store:', err.message);
+    }
+  }
 }
 
 if (!isServerless) {
@@ -266,18 +325,31 @@ function buildGloballySentEmailSet(data) {
   for (const log of data.send_log) {
     if (log.status === 'sent' && log.email) sent.add(log.email.toLowerCase());
   }
+  const contactById = new Map();
+  for (const c of data.contacts) contactById.set(c.id, c);
   for (const q of data.send_queue) {
     if (q.status !== 'sent') continue;
-    const contact = data.contacts.find(c => c.id === q.contact_id);
+    const contact = contactById.get(q.contact_id);
     if (contact?.email) sent.add(contact.email.toLowerCase());
   }
   return sent;
 }
 
+function getSentEmailCache(data) {
+  if (!sentEmailCache) sentEmailCache = buildGloballySentEmailSet(data);
+  return sentEmailCache;
+}
+
+function rememberSentEmail(email) {
+  if (!email) return;
+  if (!sentEmailCache) return;
+  sentEmailCache.add(email.toLowerCase());
+}
+
 function wasEmailSentGlobally(email) {
   if (!email) return false;
   const key = email.toLowerCase();
-  return withStoreRead((data) => buildGloballySentEmailSet(data).has(key));
+  return withStoreRead((data) => getSentEmailCache(data).has(key));
 }
 
 function getSentEmailsForList(listId) {
@@ -534,6 +606,96 @@ function getPendingQueue(limit, accountId = null) {
   });
 }
 
+function buildQueueItem(q, camp, contact) {
+  const smtpAccountId = q.smtp_account_id || camp.smtp_account_id || 'account1';
+  return {
+    queue_id: q.id, campaign_id: q.campaign_id, contact_id: q.contact_id,
+    smtp_account_id: smtpAccountId,
+    list_id: q.list_id || camp.list_id || contact.list_id || 'list1',
+    email: contact.email,
+    name: contact.name || [contact.first_name, contact.last_name].filter(Boolean).join(' '),
+    first_name: contact.first_name || '',
+    last_name: contact.last_name || '',
+    company: contact.company || '',
+    title: contact.title || '',
+    website: contact.website || '',
+    linkedin: contact.linkedin || '',
+    city: contact.city || '',
+    country: contact.country || '',
+    industry: contact.industry || '',
+    company_profile: contact.company_profile || '',
+    zip: contact.zip || '',
+    address: contact.address || '',
+    drivers: contact.drivers || '',
+    power_units: contact.power_units || '',
+    authority_status: contact.authority_status || '',
+    dot: contact.dot || '',
+    mc: contact.mc || '',
+    subject: camp.subject, body_html: camp.body_html, body_text: camp.body_text,
+    preheader: camp.preheader || '', include_unsubscribe: camp.include_unsubscribe === true,
+    attachment: camp.attachment || null,
+    campaign_name: camp.name,
+  };
+}
+
+function claimNextPending(accountId, { maxSkip = 40 } = {}) {
+  return withStore((data) => {
+    const nowMs = Date.now();
+    const sent = getSentEmailCache(data);
+    let skipped = 0;
+    let fallback = null;
+
+    for (const q of data.send_queue) {
+      if (q.status !== 'pending') continue;
+      if (q.deferred_until && new Date(q.deferred_until).getTime() > nowMs) continue;
+      const camp = data.campaigns.find(c => c.id === q.campaign_id);
+      if (!camp || !['sending', 'queued'].includes(camp.status)) continue;
+      const smtpAccountId = q.smtp_account_id || camp.smtp_account_id || 'account1';
+      if (accountId && smtpAccountId !== accountId) continue;
+      const contact = data.contacts.find(c => c.id === q.contact_id);
+      if (!contact || contact.status !== 'active') continue;
+
+      const emailKey = (contact.email || '').toLowerCase();
+      if (emailKey && sent.has(emailKey)) {
+        q.status = 'skipped';
+        q.error_message = 'Skipped — already sent to this email';
+        q.sent_at = now();
+        skipped++;
+        if (skipped >= maxSkip) return { skippedBatch: true, skipped };
+        continue;
+      }
+
+      const item = buildQueueItem(q, camp, contact);
+      if ((q.retry_count || 0) === 0) {
+        q.status = 'sending';
+        return item;
+      }
+      if (!fallback) fallback = { q, item };
+    }
+
+    if (fallback) {
+      fallback.q.status = 'sending';
+      return fallback.item;
+    }
+    return skipped > 0 ? { skippedBatch: true, skipped } : null;
+  });
+}
+
+function releaseSendingItems(accountId = null) {
+  return withStore((data) => {
+    let count = 0;
+    for (const q of data.send_queue) {
+      if (q.status !== 'sending') continue;
+      const camp = data.campaigns.find(c => c.id === q.campaign_id);
+      const smtpId = q.smtp_account_id || camp?.smtp_account_id || 'account1';
+      if (accountId && smtpId !== accountId) continue;
+      q.status = 'pending';
+      count++;
+    }
+    return count;
+  });
+}
+
 function restoreTransientBlockedContacts(listIds = null) {
   return withStore((data) => {
     const lists = listIds ? new Set(listIds) : null;
@@ -756,6 +918,7 @@ function markSent(queueId, campaignId, contactId, email, meta = {}) {
     });
     const camp = data.campaigns.find(c => c.id === campaignId);
     if (camp) camp.sent_count++;
+    rememberSentEmail(email);
   });
 }
 
@@ -1026,11 +1189,11 @@ function getQueueProgress() {
     const pendingByCampaign = {};
     const nowMs = Date.now();
     for (const q of data.send_queue) {
-      if (q.status === 'pending') {
+      if (q.status === 'pending' || q.status === 'sending') {
         pending++;
         pendingByCampaign[q.campaign_id] = (pendingByCampaign[q.campaign_id] || 0) + 1;
         const ready = !q.deferred_until || new Date(q.deferred_until).getTime() <= nowMs;
-        if (ready && (!nextItem || q.id < nextItem.id)) nextItem = q;
+        if (q.status === 'pending' && ready && (!nextItem || q.id < nextItem.id)) nextItem = q;
       } else if (q.status === 'sent') sent++;
       else if (q.status === 'failed') failed++;
     }
@@ -1245,7 +1408,7 @@ module.exports = {
   getContactById, getActiveContactIds, getEligibleContactIds, getSuccessfulContactIds, getCampaignSentCount, getContactCounts, getAllListCounts,
   suppressContact, getSentEmailsForList,
   getCampaigns, getCampaign, createCampaign, updateCampaign, setCampaignStatus, getCampaignsByStatus,
-  queueCampaign, getPendingQueue, getPendingCount, getQueueRetries, requeueItem, bumpQueueItemToEnd, deferQueueItem,
+  queueCampaign, getPendingQueue, claimNextPending, releaseSendingItems, getPendingCount, getQueueRetries, requeueItem, bumpQueueItemToEnd, deferQueueItem,
   requeueFailedActiveForAccount, restoreTransientBlockedContacts,
   deferBlockedQueueItems, getAccountQuotaState, setAccountQuotaState,
   pauseAllCampaigns, pauseCampaignsForAccount,

@@ -24,6 +24,10 @@ function inferImapHost(smtpHost = '') {
   return null;
 }
 
+function onRailway() {
+  return !!(process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_ENVIRONMENT_ID || process.env.RAILWAY_PROJECT_ID);
+}
+
 function getImapConfig(accountId) {
   const acc = getAccount(accountId);
   if (!acc?.email || !acc?.pass) return null;
@@ -31,7 +35,9 @@ function getImapConfig(accountId) {
   const num = (accountId || '').replace('account', '');
   const perAccountFlag = num ? process.env[`SMTP_ACCOUNT_${num}_SAVE_TO_SENT`] : null;
   const globalOff = process.env.SAVE_TO_SENT === 'false';
-  const enabled = perAccountFlag === 'false' ? false : (perAccountFlag === 'true' || !globalOff);
+  const forceOn = process.env.SAVE_TO_SENT === 'force' || perAccountFlag === 'force';
+  if (onRailway() && !forceOn) return null;
+  const enabled = perAccountFlag === 'false' ? false : (perAccountFlag === 'true' || forceOn || !globalOff);
   if (!enabled) return null;
 
   const host = (num && process.env[`SMTP_ACCOUNT_${num}_IMAP_HOST`])

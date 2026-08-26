@@ -62,11 +62,17 @@ function dayDiff(startDate, todayDate) {
   return Math.floor((today - start) / 86400000) + 1;
 }
 
-function jitterDelay(baseMs) {
-  const base = Number(baseMs) || 30000;
-  const spread = Math.max(base * 0.25, 8000);
+function jitterDelay(baseMs, { warmup = false } = {}) {
+  const parsed = Number(baseMs);
+  const delay = Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+  if (!warmup) {
+    if (delay <= 0) return 0;
+    const spread = Math.min(Math.max(delay * 0.15, 0), 40);
+    return Math.max(0, Math.round(delay + (Math.random() * 2 - 1) * spread));
+  }
+  const spread = Math.max(delay * 0.25, 8000);
   const delta = (Math.random() * 2 - 1) * spread;
-  return Math.max(15000, Math.round(base + delta));
+  return Math.max(15000, Math.round(delay + delta));
 }
 
 function msUntilSendWindow(timeZone, startHour, endHour) {

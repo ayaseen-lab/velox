@@ -4,6 +4,20 @@ const { getAccount } = require('./accounts');
 
 const BASE = process.env.HOSTINGER_MAIL_API_URL || 'https://api.mail.hostinger.com';
 const mailboxIdCache = {};
+const MAIL_API_TIMEOUT_MS = parseInt(process.env.MAIL_API_TIMEOUT_MS || '20000', 10);
+
+function mailApiError(message, { status, retryable = true, code } = {}) {
+  const err = new Error(message);
+  err.status = status;
+  err.responseCode = status;
+  err.retryable = retryable;
+  if (code) err.code = code;
+  return err;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
+}
 
 function tokenFromEnv(accountId) {
   const num = String(accountId || '').replace('account', '');
@@ -50,17 +64,37 @@ function saveMailApiSettings({ token, mailboxId, accountId } = {}) {
   return { configured: isConfigured(accountId || 'account1') };
 }
 
-async function mailApiFetch(path, { token, method = 'GET', body } = {}) {
+async function mailApiFetch(path, { token, method = 'GET', body, timeoutMs = MAIL_API_TIMEOUT_MS } = {}) {
   const headers = {
     Authorization: `Bearer ${token}`,
     Accept: 'application/json',
   };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
-  const res = await fetch(`${BASE}${path}`, {
-    method,
-    headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let res;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err?.name === 'AbortError') {
+      throw mailApiError(`Hostinger Mail API timed out after ${timeoutMs / 1000}s`, {
+        status: 408,
+        code: 'ETIMEDOUT',
+        retryable: true,
+      });
+    }
+    throw mailApiError(`Hostinger Mail API request failed: ${err.message}`, {
+      code: err.code || 'ECONNRESET',
+      retryable: true,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
   const text = await res.text();
   let json = null;
   if (text) {
@@ -73,9 +107,10 @@ async function getCurrentAccount(token) {
   const result = await mailApiFetch('/api/v1/me', { token });
   if (!result.ok) {
     const msg = result.json?.error || result.text.slice(0, 180) || `HTTP ${result.status}`;
-    const err = new Error(`Hostinger Mail API auth failed: ${msg}`);
-    err.status = result.status;
-    throw err;
+    throw mailApiError(`Hostinger Mail API auth failed: ${msg}`, {
+      status: result.status,
+      retryable: result.status >= 500 || result.status === 429,
+    });
   }
   return result.json?.data || result.json || {};
 }
@@ -181,7 +216,29 @@ async function sendViaMailApi(accountId, mailOptions) {
     return { savedToSent: true, via: 'hostinger-mail-api', mailboxId };
   }
   const msg = result.json?.error || result.text.slice(0, 220) || `HTTP ${result.status}`;
-  throw new Error(`Hostinger Mail API send failed: ${msg}`);
+  const retryable = result.status === 429 || result.status === 408 || result.status >= 500;
+  throw mailApiError(`Hostinger Mail API send failed: ${msg}`, {
+    status: result.status,
+    code: result.status === 429 ? 'RATE_LIMIT' : undefined,
+    retryable,
+  });
+}
+
+async function sendViaMailApiWithRetry(accountId, mailOptions, { attempts = 3 } = {}) {
+  let lastErr;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await sendViaMailApi(accountId, mailOptions);
+    } catch (err) {
+      lastErr = err;
+      const retryable = err.retryable !== false && (err.status === 429 || err.status >= 500 || err.status === 408 || err.code === 'ETIMEDOUT' || err.code === 'RATE_LIMIT');
+      if (!retryable || i === attempts - 1) throw err;
+      const wait = err.status === 429 ? 1500 * (i + 1) : 350 * (i + 1);
+      console.warn(`[${accountId}] Mail API retry ${i + 1}/${attempts}: ${err.message}`);
+      await sleep(wait);
+    }
+  }
+  throw lastErr;
 }
 
 async function diagnoseMailApi(accountId = 'account1') {
@@ -213,5 +270,6 @@ module.exports = {
   saveMailApiSettings,
   verifyMailApi,
   sendViaMailApi,
+  sendViaMailApiWithRetry,
   diagnoseMailApi,
 };

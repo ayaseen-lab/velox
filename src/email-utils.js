@@ -193,12 +193,13 @@ function classifySmtpError(err) {
   }
 
   if (
-    code === 421 || code === 450 || code === 452 ||
+    code === 421 || code === 429 || code === 450 || code === 452 ||
     full.includes('rate limit') || full.includes('too many') ||
     full.includes('4.2.1') || full.includes('4.7.0') ||
-    full.includes('throttl') || full.includes('try again later')
+    full.includes('throttl') || full.includes('try again later') ||
+    full.includes('http 429')
   ) {
-    return { type: 'rate_limit', retry: true, pauseMs: 0, message: 'SMTP rate limit — retrying next email immediately' };
+    return { type: 'rate_limit', retry: true, pauseMs: 2000, message: 'Provider rate limit — backing off briefly' };
   }
 
   if (
@@ -209,8 +210,19 @@ function classifySmtpError(err) {
     return { type: 'daily_quota', retry: false, stopDay: true, message: 'Gmail daily sending limit reached — resumes tomorrow' };
   }
 
-  if (code >= 500 || full.includes('temporary') || full.includes('timeout') || full.includes('econnreset')) {
-    return { type: 'temporary', retry: true, pauseMs: 1000, message: 'Temporary server error — will retry' };
+  if (
+    code >= 500 ||
+    full.includes('temporary') ||
+    full.includes('timeout') ||
+    full.includes('timed out') ||
+    full.includes('aborted') ||
+    full.includes('abort') ||
+    full.includes('econnreset') ||
+    full.includes('fetch failed') ||
+    full.includes('network') ||
+    full.includes('socket hang')
+  ) {
+    return { type: 'temporary', retry: true, pauseMs: 400, message: 'Temporary server error — will retry' };
   }
 
   if (full.includes('invalid') && full.includes('address')) {
