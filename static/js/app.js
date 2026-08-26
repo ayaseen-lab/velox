@@ -1054,7 +1054,7 @@ async function loadContacts(page = 1) {
     renderListTabs(accountData.accounts, accountData.lists);
     renderListSummary(accountData.lists);
 
-    const data = await api(`/contacts?page=${page}&limit=50&search=${encodeURIComponent(search)}&list_id=${selectedListId}`);
+    const data = await api(`/contacts?page=1&limit=10000&search=${encodeURIComponent(search)}&list_id=${selectedListId}`);
     const tbody = document.getElementById('contactsTable');
 
     if (data.contacts.length === 0) {
@@ -1073,22 +1073,22 @@ async function loadContacts(page = 1) {
       `).join('');
     }
 
-    renderPagination(data.total, data.page, data.limit);
+    renderPagination(data.total, data.contacts.length);
   } catch (err) {
     toast(err.message, 'error');
   }
 }
 
-function renderPagination(total, page, limit) {
-  const pages = Math.ceil(total / limit);
+function renderPagination(total, shown) {
   const el = document.getElementById('contactsPagination');
-  if (pages <= 1) { el.innerHTML = ''; return; }
-
-  let html = '';
-  for (let i = 1; i <= pages; i++) {
-    html += `<button class="btn btn-sm ${i === page ? 'btn-primary' : ''}" onclick="loadContacts(${i})">${i}</button>`;
+  if (!el) return;
+  if (!total) {
+    el.innerHTML = '';
+    return;
   }
-  el.innerHTML = html;
+  el.innerHTML = shown >= total
+    ? `Showing all ${total.toLocaleString()} contacts`
+    : `Showing ${shown.toLocaleString()} of ${total.toLocaleString()} contacts`;
 }
 
 document.getElementById('contactSearch').addEventListener('input', debounce(() => loadContacts(1), 80));

@@ -162,6 +162,11 @@ nav { flex: 1; padding: 0 12px; }
 /* Tables */
 .table-wrap { overflow-x: auto; }
 
+.contacts-table-wrap {
+  max-height: min(70vh, 720px);
+  overflow: auto;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -285,9 +290,13 @@ tr:hover td { background: var(--surface2); }
 
 .pagination {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 16px;
   justify-content: center;
+  align-items: center;
+  color: var(--text-muted);
+  font-size: 0.85rem;
 }
 
 /* Modal */

@@ -168,11 +168,11 @@ app.post('/api/smtp/test', async (req, res) => {
 });
 
 app.get('/api/contacts', (req, res) => {
-  const { search, page = 1, limit = 50, list_id } = req.query;
+  const { search, page = 1, limit = 10000, list_id } = req.query;
   res.json(store.getContacts({
     search,
-    page: parseInt(page),
-    limit: parseInt(limit),
+    page: parseInt(page, 10) || 1,
+    limit: parseInt(limit, 10) || 10000,
     list_id: list_id || undefined,
   }));
 });

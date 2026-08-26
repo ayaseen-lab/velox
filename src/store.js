@@ -120,16 +120,26 @@ function withStoreRead(fn) {
 
 function getContacts({ search = '', page = 1, limit = 50, list_id } = {}) {
   return withStoreRead((data) => {
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.min(20000, Math.max(1, parseInt(limit, 10) || 50));
     let list = data.contacts;
     if (list_id) list = list.filter(c => c.list_id === list_id);
     if (search) {
       const q = search.toLowerCase();
-      list = list.filter(c => c.email.toLowerCase().includes(q) || (c.name || '').toLowerCase().includes(q));
+      list = list.filter(c =>
+        c.email.toLowerCase().includes(q)
+        || (c.name || '').toLowerCase().includes(q)
+        || (c.company || '').toLowerCase().includes(q)
+        || (c.title || '').toLowerCase().includes(q)
+      );
     }
     const total = list.length;
-    const offset = (page - 1) * limit;
-    const contacts = [...list].sort((a, b) => b.id - a.id).slice(offset, offset + limit);
-    return { contacts, total, page, limit, list_id: list_id || null };
+    const offset = (pageNum - 1) * limitNum;
+    const contacts = list
+      .slice()
+      .sort((a, b) => b.id - a.id)
+      .slice(offset, offset + limitNum);
+    return { contacts, total, page: pageNum, limit: limitNum, list_id: list_id || null };
   });
 }
 
@@ -164,41 +174,47 @@ function addContact(email, fields = {}, listId = 'list1') {
 }
 
 function addContactsBulk(rows, listId = 'list1') {
-  const BATCH = 500;
-  let added = 0, skipped = 0;
+  const result = withStore((data) => {
+    const existing = new Set(
+      data.contacts
+        .filter(c => c.list_id === listId)
+        .map(c => c.email.toLowerCase())
+    );
+    let added = 0;
+    let skipped = 0;
+    const seen = new Set(existing);
 
-  for (let i = 0; i < rows.length; i += BATCH) {
-    const batch = rows.slice(i, i + BATCH);
-    const result = withStore((data) => {
-      let bAdded = 0, bSkipped = 0;
-      for (const row of batch) {
-        const { email, name, first_name, last_name, company, title, website, linkedin } = row;
-        if (!email || !email.includes('@')) { bSkipped++; continue; }
-        const exists = data.contacts.some(c =>
-          c.email.toLowerCase() === email.toLowerCase() && c.list_id === listId
-        );
-        if (exists) { bSkipped++; continue; }
-        data.contacts.push({
-          id: nextId(data, 'contacts'), email,
-          name: name || [first_name, last_name].filter(Boolean).join(' '),
-          first_name: first_name || '', last_name: last_name || '',
-          company: company || '', title: title || '',
-          website: website || '', linkedin: linkedin || '',
-          city: row.city || '', country: row.country || '', industry: row.industry || '',
-          phone: row.phone || '',
-          company_profile: row.company_profile || '',
-          list_id: listId,
-          status: 'active', created_at: now(),
-        });
-        bAdded++;
-      }
-      return { added: bAdded, skipped: bSkipped };
-    });
-    added += result.added;
-    skipped += result.skipped;
-  }
-
-  return { added, skipped, listId };
+    for (const row of rows) {
+      const email = (row.email || '').trim();
+      if (!email || !email.includes('@')) { skipped++; continue; }
+      const key = email.toLowerCase();
+      if (seen.has(key)) { skipped++; continue; }
+      seen.add(key);
+      data.contacts.push({
+        id: nextId(data, 'contacts'),
+        email,
+        name: row.name || [row.first_name, row.last_name].filter(Boolean).join(' '),
+        first_name: row.first_name || '',
+        last_name: row.last_name || '',
+        company: row.company || '',
+        title: row.title || '',
+        website: row.website || '',
+        linkedin: row.linkedin || '',
+        city: row.city || '',
+        country: row.country || '',
+        industry: row.industry || '',
+        phone: row.phone || '',
+        company_profile: row.company_profile || '',
+        list_id: listId,
+        status: 'active',
+        created_at: now(),
+      });
+      added++;
+    }
+    return { added, skipped, listId };
+  });
+  flushStore();
+  return result;
 }
 
 function deleteContact(id) {

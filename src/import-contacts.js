@@ -18,21 +18,23 @@ function normalizeContact(row) {
   const lastName = pick(row, 'last name', 'lastname', 'last_name', 'last');
   const email = pick(row, 'email address', 'email', 'e-mail', 'mail');
   const company = pick(row, 'company name', 'company', 'organization', 'org');
-  const title = pick(row, 'job title', 'title', 'position', 'role');
+  const title = pick(row, 'contact title', 'job title', 'title', 'position', 'role');
   const website = pick(row, 'website', 'url', 'company website', 'source url', 'source_url');
   const linkedin = pick(row, 'linkedin profile', 'linkedin', 'linkedin url', 'person linkedin url');
   const city = pick(row, 'city', 'person city');
-  const country = pick(row, 'country', 'person country');
-  const industry = pick(row, 'industry', 'company industry', 'source');
+  const country = pick(row, 'state', 'country', 'person country');
+  const industry = pick(row, 'industry', 'company industry', 'source', 'authority type');
   const phone = pick(row, 'phone', 'phone number', 'mobile', 'tel');
   const companyProfile = pick(row, 'company profile', 'company about', 'about', 'description', 'company description', 'specialties', 'keywords');
-  const name = pick(row, 'name', 'full name', 'full_name') || [firstName, lastName].filter(Boolean).join(' ');
+  const name = pick(row, 'contact name', 'contact', 'name', 'full name', 'full_name')
+    || [firstName, lastName].filter(Boolean).join(' ');
+  const nameParts = name.split(/\s+/).filter(Boolean);
 
   return {
     email,
-    name: name || [firstName, lastName].filter(Boolean).join(' '),
-    first_name: firstName,
-    last_name: lastName,
+    name,
+    first_name: firstName || nameParts[0] || '',
+    last_name: lastName || nameParts.slice(1).join(' '),
     company,
     title,
     website,
