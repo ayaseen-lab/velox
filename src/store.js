@@ -1,8 +1,10 @@
 const fs = require('fs');
 const path = require('path');
-const { dataDir } = require('./paths');
+const { dataDir, isServerless } = require('./paths');
 
 const dbPath = path.join(dataDir, 'store.json');
+let memory = null;
+let saveTimer = null;
 
 const empty = () => ({
   contacts: [],
@@ -40,8 +42,49 @@ function migrateData(data) {
   return data;
 }
 
-function save(data) {
-  fs.writeFileSync(dbPath, JSON.stringify(data, null, 2));
+function persist(data) {
+  fs.writeFileSync(dbPath, JSON.stringify(data));
+}
+
+function getMemory() {
+  if (!memory) memory = load();
+  return memory;
+}
+
+function scheduleSave() {
+  if (isServerless) {
+    persist(getMemory());
+    return;
+  }
+  if (saveTimer) return;
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    try {
+      persist(getMemory());
+    } catch (err) {
+      console.error('Failed to save store:', err.message);
+    }
+  }, 80);
+}
+
+function flushStore() {
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+  if (memory) persist(memory);
+}
+
+if (!isServerless) {
+  process.on('exit', () => {
+    try { flushStore(); } catch (_) { /* ignore */ }
+  });
+  for (const sig of ['SIGINT', 'SIGTERM']) {
+    process.on(sig, () => {
+      try { flushStore(); } catch (_) { /* ignore */ }
+      process.exit(0);
+    });
+  }
 }
 
 function now() {
@@ -63,14 +106,14 @@ function nextId(data, table) {
 }
 
 function withStore(fn) {
-  const data = load();
+  const data = getMemory();
   const result = fn(data);
-  save(data);
+  scheduleSave();
   return result;
 }
 
 function withStoreRead(fn) {
-  return fn(load());
+  return fn(getMemory());
 }
 
 // --- Contacts ---
@@ -723,13 +766,14 @@ function getRemainingToday(limit, accountId = null) {
 
 function getRecentLogs(limit = 20) {
   return withStoreRead((data) => {
-    return [...data.send_log]
-      .sort((a, b) => new Date(b.sent_at) - new Date(a.sent_at))
-      .slice(0, limit)
-      .map(log => {
-        const contact = data.contacts.find(c => c.id === log.contact_id);
-        return { ...log, contact_name: contact?.name || null };
-      });
+    const logs = data.send_log;
+    const out = [];
+    for (let i = logs.length - 1; i >= 0 && out.length < limit; i--) {
+      const log = logs[i];
+      const contact = data.contacts.find(c => c.id === log.contact_id);
+      out.push({ ...log, contact_name: contact?.name || null });
+    }
+    return out;
   });
 }
 
@@ -907,16 +951,23 @@ function deleteSavedSmtpAccount(id) {
 
 function getQueueProgress() {
   return withStoreRead((data) => {
+    let pending = 0;
+    let sent = 0;
+    let failed = 0;
+    let nextItem = null;
+    const pendingByCampaign = {};
+    const nowMs = Date.now();
+    for (const q of data.send_queue) {
+      if (q.status === 'pending') {
+        pending++;
+        pendingByCampaign[q.campaign_id] = (pendingByCampaign[q.campaign_id] || 0) + 1;
+        const ready = !q.deferred_until || new Date(q.deferred_until).getTime() <= nowMs;
+        if (ready && (!nextItem || q.id < nextItem.id)) nextItem = q;
+      } else if (q.status === 'sent') sent++;
+      else if (q.status === 'failed') failed++;
+    }
     const total = data.send_queue.length;
-    const pending = data.send_queue.filter(q => q.status === 'pending').length;
-    const sent = data.send_queue.filter(q => q.status === 'sent').length;
-    const failed = data.send_queue.filter(q => q.status === 'failed').length;
     const completed = sent + failed;
-
-    const nextItem = data.send_queue
-      .filter(q => q.status === 'pending')
-      .filter(q => !q.deferred_until || new Date(q.deferred_until).getTime() <= Date.now())
-      .sort((a, b) => a.id - b.id)[0];
 
     let nextEmail = null;
     if (nextItem) {
@@ -924,9 +975,13 @@ function getQueueProgress() {
       nextEmail = contact?.email || null;
     }
 
-    const lastSentLog = [...data.send_log]
-      .filter(l => l.status === 'sent')
-      .sort((a, b) => new Date(b.sent_at) - new Date(a.sent_at))[0];
+    let lastSentLog = null;
+    for (let i = data.send_log.length - 1; i >= 0; i--) {
+      if (data.send_log[i].status === 'sent') {
+        lastSentLog = data.send_log[i];
+        break;
+      }
+    }
 
     const allCampaigns = data.campaigns
       .slice()
@@ -940,7 +995,7 @@ function getQueueProgress() {
         sent: c.sent_count || 0,
         failed: c.failed_count || 0,
         total: c.total_recipients || 0,
-        pending: data.send_queue.filter(q => q.campaign_id === c.id && q.status === 'pending').length,
+        pending: pendingByCampaign[c.id] || 0,
         percentComplete: c.total_recipients > 0
           ? Math.round(((c.sent_count || 0) / c.total_recipients) * 100)
           : 0,
@@ -990,50 +1045,63 @@ function categorizeFailure(type) {
 
 function getAnalytics() {
   return withStoreRead((data) => {
-    const queue = data.send_queue;
-    const logs = data.send_log;
-    const sent = queue.filter(q => q.status === 'sent').length;
-    const failed = queue.filter(q => q.status === 'failed').length;
-    const pending = queue.filter(q => q.status === 'pending').length;
-    const total = queue.length;
+    let sent = 0;
+    let failed = 0;
+    let pending = 0;
+    const pendingByCampaign = {};
+    for (const q of data.send_queue) {
+      if (q.status === 'sent') sent++;
+      else if (q.status === 'failed') failed++;
+      else if (q.status === 'pending') {
+        pending++;
+        pendingByCampaign[q.campaign_id] = (pendingByCampaign[q.campaign_id] || 0) + 1;
+      }
+    }
+    const total = data.send_queue.length;
     const processed = sent + failed;
     const successRate = processed > 0 ? Math.round((sent / processed) * 1000) / 10 : 0;
 
+    const today = todayLocal();
+    const cutoff = Date.now() - 14 * 24 * 60 * 60 * 1000;
     const failureBreakdown = {};
-    for (const log of logs.filter(l => l.status === 'failed')) {
-      const cat = categorizeFailure(log.failure_type || 'other');
-      failureBreakdown[cat] = (failureBreakdown[cat] || 0) + 1;
+    const failureReasons = {};
+    const hourlyToday = Array.from({ length: 24 }, (_, h) => ({ hour: h, sent: 0, failed: 0 }));
+    const daily14 = {};
+    let todaySent = 0;
+    let todayFailed = 0;
+
+    for (const log of data.send_log) {
+      const day = toLocalDate(log.sent_at);
+      const ts = log.sent_at ? new Date(log.sent_at).getTime() : 0;
+      if (log.status === 'failed') {
+        const cat = categorizeFailure(log.failure_type || 'other');
+        failureBreakdown[cat] = (failureBreakdown[cat] || 0) + 1;
+        if (log.error_message) {
+          const key = log.error_message.slice(0, 80);
+          failureReasons[key] = (failureReasons[key] || 0) + 1;
+        }
+      }
+      if (day === today) {
+        const h = new Date(log.sent_at).getHours();
+        if (log.status === 'sent') {
+          hourlyToday[h].sent++;
+          todaySent++;
+        } else if (log.status === 'failed') {
+          hourlyToday[h].failed++;
+          todayFailed++;
+        }
+      }
+      if (ts >= cutoff) {
+        if (!daily14[day]) daily14[day] = { day, sent: 0, failed: 0 };
+        if (log.status === 'sent') daily14[day].sent++;
+        else if (log.status === 'failed') daily14[day].failed++;
+      }
     }
 
-    const failureReasons = {};
-    for (const log of logs.filter(l => l.status === 'failed' && l.error_message)) {
-      const key = (log.error_message || '').slice(0, 80);
-      failureReasons[key] = (failureReasons[key] || 0) + 1;
-    }
     const topFailures = Object.entries(failureReasons)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 8)
       .map(([reason, count]) => ({ reason, count }));
-
-    const today = todayLocal();
-    const hourlyToday = Array.from({ length: 24 }, (_, h) => ({ hour: h, sent: 0, failed: 0 }));
-    for (const log of logs) {
-      const d = new Date(log.sent_at);
-      if (d.toLocaleDateString('en-CA') !== today) continue;
-      const h = d.getHours();
-      if (log.status === 'sent') hourlyToday[h].sent++;
-      else if (log.status === 'failed') hourlyToday[h].failed++;
-    }
-
-    const daily14 = {};
-    const cutoff = Date.now() - 14 * 24 * 60 * 60 * 1000;
-    for (const log of logs) {
-      if (new Date(log.sent_at) < cutoff) continue;
-      const day = toLocalDate(log.sent_at);
-      if (!daily14[day]) daily14[day] = { day, sent: 0, failed: 0 };
-      if (log.status === 'sent') daily14[day].sent++;
-      else if (log.status === 'failed') daily14[day].failed++;
-    }
     const dailyChart = Object.values(daily14).sort((a, b) => a.day.localeCompare(b.day));
 
     const campaignStats = data.campaigns.map(c => ({
@@ -1046,16 +1114,13 @@ function getAnalytics() {
       sent: c.sent_count,
       failed: c.failed_count,
       total: c.total_recipients,
-      pending: data.send_queue.filter(q => q.campaign_id === c.id && q.status === 'pending').length,
+      pending: pendingByCampaign[c.id] || 0,
       successRate: (c.sent_count + c.failed_count) > 0
         ? Math.round((c.sent_count / (c.sent_count + c.failed_count)) * 1000) / 10
         : 0,
       started_at: c.started_at,
       completed_at: c.completed_at,
     })).sort((a, b) => b.id - a.id);
-
-    const todaySent = logs.filter(l => l.status === 'sent' && toLocalDate(l.sent_at) === today).length;
-    const todayFailed = logs.filter(l => l.status === 'failed' && toLocalDate(l.sent_at) === today).length;
 
     const replies = data.replies || [];
 
@@ -1123,4 +1188,5 @@ module.exports = {
   getAccountDailyLimits, getAccountDailyLimit, setAccountDailyLimit,
   getSavedSmtpAccounts, saveSmtpAccount, getSavedSmtpAccountRaw, deleteSavedSmtpAccount,
   getQueueProgress, resumeSendingCampaigns, getAnalytics, markReply, markBounce,
+  flushStore,
 };

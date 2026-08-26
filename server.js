@@ -837,7 +837,7 @@ app.delete('/api/variables/custom/:id', (req, res) => {
   res.json({ success: true });
 });
 
-app.use(express.static(path.join(__dirname, 'static')));
+app.use(express.static(path.join(__dirname, 'static'), { etag: true, lastModified: true, maxAge: 0 }));
 
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'static', 'index.html'));

@@ -15,6 +15,11 @@
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
+*, *::before, *::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -61,7 +66,6 @@ nav { flex: 1; padding: 0 12px; }
   text-decoration: none;
   border-radius: 8px;
   margin-bottom: 4px;
-  transition: all 0.15s;
   overflow: hidden;
   white-space: nowrap;
 }
@@ -89,7 +93,6 @@ nav { flex: 1; padding: 0 12px; }
   height: 100%;
   background: var(--primary);
   border-radius: 3px;
-  transition: width 0.3s;
   width: 0%;
 }
 .quota-text { margin-top: 4px; color: var(--text-muted); font-size: 0.8rem; }
@@ -222,7 +225,6 @@ tr:hover td { background: var(--surface2); }
   cursor: pointer;
   font-size: 0.9rem;
   font-weight: 500;
-  transition: all 0.15s;
 }
 
 .btn:hover { border-color: var(--text-muted); }
@@ -342,17 +344,11 @@ tr:hover td { background: var(--surface2); }
   border: 1px solid var(--border);
   color: var(--text);
   font-size: 0.9rem;
-  animation: none;
   max-width: 360px;
 }
 
 .toast.success { border-color: var(--success); }
 .toast.error { border-color: var(--danger); }
-
-@keyframes slideIn {
-  from { transform: translateX(100%); opacity: 0; }
-  to { transform: translateX(0); opacity: 1; }
-}
 
 .empty-state {
   text-align: center;
@@ -414,7 +410,6 @@ tr:hover td { background: var(--surface2); }
   border-radius: 12px;
   overflow: hidden;
   margin-bottom: 20px;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.3);
 }
 
 .compose-header {
@@ -822,7 +817,6 @@ tr:hover td { background: var(--surface2); }
 
 .account-card.protected {
   border-color: rgba(99,102,241,0.4);
-  box-shadow: 0 0 0 1px rgba(99,102,241,0.1);
 }
 
 .account-card-header {
@@ -910,7 +904,6 @@ tr:hover td { background: var(--surface2); }
   color: var(--text-muted);
   cursor: pointer;
   font-size: 0.9rem;
-  transition: all 0.15s;
 }
 
 .list-tab:hover { border-color: var(--primary); color: var(--text); }

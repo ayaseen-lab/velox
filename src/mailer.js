@@ -633,7 +633,7 @@ function getAccountStatuses() {
   return getAccounts().map(acc => {
     const state = initAccountState(acc.id);
     const todaySent = store.getTodaySentCount(acc.id);
-    const remaining = store.getRemainingToday(acc.dailyLimit, acc.id);
+    const remaining = Math.max(0, acc.dailyLimit - todaySent);
     const today = new Date().toLocaleDateString('en-CA');
     const paused = isAccountPaused(acc.id);
     return {

@@ -25,7 +25,7 @@ function initEditor() {
       ],
     },
   });
-  quillEditor.on('text-change', debounce(() => { runValidation(); updatePreview(); }, 400));
+  quillEditor.on('text-change', debounce(() => { runValidation(); updatePreview(); }, 120));
 }
 
 function getEditorHtml() {
@@ -76,7 +76,7 @@ function toast(message, type = 'success') {
   el.className = `toast ${type}`;
   el.textContent = message;
   container.appendChild(el);
-  setTimeout(() => el.remove(), 4000);
+  setTimeout(() => el.remove(), 1600);
 }
 
 // --- API helpers ---
@@ -926,8 +926,8 @@ function buildFormData(data) {
   return formData;
 }
 
-document.getElementById('campaignSubject').addEventListener('input', debounce(() => { runValidation(); updatePreview(); }, 400));
-document.getElementById('campaignPreheader').addEventListener('input', debounce(() => { runValidation(); updatePreview(); }, 400));
+document.getElementById('campaignSubject').addEventListener('input', debounce(() => { runValidation(); updatePreview(); }, 120));
+document.getElementById('campaignPreheader').addEventListener('input', debounce(() => { runValidation(); updatePreview(); }, 120));
 
 document.getElementById('loadDefaultEmail').addEventListener('click', () => loadDefaultEmail(false));
 
@@ -1091,7 +1091,7 @@ function renderPagination(total, page, limit) {
   el.innerHTML = html;
 }
 
-document.getElementById('contactSearch').addEventListener('input', debounce(() => loadContacts(1), 300));
+document.getElementById('contactSearch').addEventListener('input', debounce(() => loadContacts(1), 80));
 
 document.getElementById('csvUpload').addEventListener('change', async (e) => {
   const file = e.target.files[0];
@@ -1488,9 +1488,11 @@ function formatDate(str) {
 }
 
 function escapeHtml(str) {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
+  return String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 function debounce(fn, ms) {
@@ -1502,5 +1504,4 @@ function debounce(fn, ms) {
 }
 
 // Init
-initEditor();
 loadDashboard();
