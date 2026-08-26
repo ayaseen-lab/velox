@@ -119,7 +119,6 @@ async function saveCopyToSentInner(accountId, mailOptions, imapConfig) {
       disableAutoIdle: true,
       socketTimeout: IMAP_TIMEOUT_MS,
       greetingTimeout: Math.min(IMAP_TIMEOUT_MS, 8000),
-      family: 4,
       tls: { rejectUnauthorized: true },
     });
     attachSafeErrorHandler(client);

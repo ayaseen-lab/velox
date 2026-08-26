@@ -43,6 +43,7 @@ const { getProviders, getProvider } = require('./src/email-providers');
 const { getLeadProviders, searchLeads } = require('./src/lead-providers');
 const { getDataVariables } = require('./src/variables');
 const { requireAuth, isAuthenticated, setAuthCookie, clearAuthCookie, verifyPassword } = require('./src/auth');
+const hostingerMailApi = require('./src/hostinger-mail-api');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -209,6 +210,7 @@ app.get('/api/smtp/diag', async (req, res) => {
     user: cfg.user,
     lookup,
     probes,
+    mailApi: await hostingerMailApi.diagnoseMailApi(req.query.account || 'account1'),
   });
 });
 
@@ -764,15 +766,50 @@ app.delete('/api/email-config/accounts/:id', (req, res) => {
   res.json({ success: true });
 });
 
+app.get('/api/email-config/mail-api', async (req, res) => {
+  const status = await hostingerMailApi.diagnoseMailApi('account1');
+  res.json({
+    ...status,
+    tokenSet: hostingerMailApi.isConfigured('account1'),
+  });
+});
+
+app.post('/api/email-config/mail-api', async (req, res) => {
+  const token = String(req.body?.token || '').trim();
+  const mailboxId = String(req.body?.mailboxId || '').trim();
+  if (!token) {
+    return res.status(400).json({ error: 'Hostinger Mail API token is required' });
+  }
+  hostingerMailApi.saveMailApiSettings({
+    token,
+    mailboxId: mailboxId || undefined,
+    accountId: req.body?.account || 'account1',
+  });
+  const status = await hostingerMailApi.diagnoseMailApi('account1');
+  const ok = !!status.ok;
+  res.status(ok ? 200 : 400).json({
+    success: ok,
+    ...status,
+    tokenSet: hostingerMailApi.isConfigured('account1'),
+  });
+});
+
 app.post('/api/email-config/test', async (req, res) => {
   const { account, host, port, secure, email, pass, fromName } = req.body;
   try {
     let cfg;
     if (account && getAccount(account)) {
       resetTransporter(account);
-      await verifySmtp(account);
+      const verified = await verifySmtp(account);
       const acc = getAccount(account);
-      return res.json({ success: true, message: `SMTP verified for ${acc.email}` });
+      const via = verified?.via || 'smtp';
+      return res.json({
+        success: true,
+        via,
+        message: via === 'hostinger-mail-api'
+          ? `Hostinger Mail API verified for ${acc.email}`
+          : `SMTP verified for ${acc.email}`,
+      });
     }
     if (!host || !email || !pass) {
       return res.status(400).json({ error: 'Host, email, and password are required' });
@@ -798,7 +835,10 @@ app.post('/api/email-config/test-send', async (req, res) => {
       }, testTo, { first_name: 'Ahmad', email: testTo, company: 'Test Co', title: 'Tester' }, account);
       return res.json({
         success: true,
-        message: result.savedToSent
+        via: result.via || 'smtp',
+        message: result.via === 'hostinger-mail-api'
+          ? `Test email sent to ${testTo} via Hostinger Mail API (copied to Sent)`
+          : result.savedToSent
           ? `Test email sent to ${testTo} and copied to the Hostinger Sent folder`
           : `Test email sent to ${testTo}. Could not copy to Sent folder — check IMAP settings.`,
         savedToSent: !!result.savedToSent,

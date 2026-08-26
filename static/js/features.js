@@ -111,10 +111,54 @@ async function loadEmailConfig() {
 
     applyProviderPreset(selectedEmailProvider, providers);
     renderConnectedAccounts(accounts);
+    loadHostingerMailApiStatus();
   } catch (err) {
     toast(err.message, 'error');
   }
 }
+
+async function loadHostingerMailApiStatus() {
+  const el = document.getElementById('hostingerMailApiStatus');
+  if (!el) return;
+  try {
+    const status = await api('/email-config/mail-api');
+    el.classList.remove('hidden');
+    if (status.ok) {
+      const addrs = (status.mailboxes || []).map((b) => b.address).filter(Boolean).join(', ');
+      el.className = 'alert success';
+      el.textContent = `Mail API connected${addrs ? ` (${addrs})` : ''}`;
+    } else if (status.tokenSet) {
+      el.className = 'alert error';
+      el.textContent = status.message || 'Mail API token rejected';
+    } else {
+      el.className = 'alert';
+      el.textContent = 'No Mail API token yet — required for Railway sending';
+    }
+  } catch (err) {
+    el.className = 'alert error';
+    el.textContent = err.message;
+    el.classList.remove('hidden');
+  }
+}
+
+document.getElementById('saveHostingerMailApi')?.addEventListener('click', async () => {
+  const token = document.getElementById('hostingerMailApiToken')?.value.trim();
+  if (!token) {
+    toast('Paste a Hostinger Mail API token first', 'error');
+    return;
+  }
+  try {
+    const status = await api('/email-config/mail-api', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    });
+    document.getElementById('hostingerMailApiToken').value = '';
+    toast(status.ok ? 'Hostinger Mail API saved' : (status.message || 'Token saved'));
+    loadHostingerMailApiStatus();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+});
 
 function selectEmailProvider(id) {
   selectedEmailProvider = id;

@@ -567,6 +567,21 @@
         </div>
 
         <div class="card">
+          <h2>Hostinger Mail API</h2>
+          <p class="hint">Railway blocks SMTP on Hobby. Paste an Agentic Mail API token from hPanel so Reachly can send over HTTPS and copy to Sent.</p>
+          <div class="form-row">
+            <div class="form-group" style="flex:1">
+              <label>API token</label>
+              <input type="password" id="hostingerMailApiToken" placeholder="Paste Hostinger Mail API token">
+            </div>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="btn btn-primary" id="saveHostingerMailApi">Save Mail API token</button>
+          </div>
+          <div id="hostingerMailApiStatus" class="alert hidden"></div>
+        </div>
+
+        <div class="card">
           <h2>Connected Accounts</h2>
           <div id="connectedAccountsList"></div>
         </div>

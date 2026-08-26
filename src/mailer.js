@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const store = require('./store');
 const { getAccounts, getAccount, getDefaultAccount, resetAccountsCache } = require('./accounts');
 const { saveCopyToSent } = require('./save-to-sent');
+const hostingerMailApi = require('./hostinger-mail-api');
 const { getWarmupPlan, jitterDelay } = require('./warmup');
 const { htmlToPlain, wrapHtmlEmail, classifySmtpError } = require('./email-utils');
 const {
@@ -112,9 +113,19 @@ function isTimeoutError(err) {
 async function verifySmtp(accountId) {
   const id = accountId || getDefaultAccount()?.id;
   const cfg = getSmtpConfig(id);
+
+  if (hostingerMailApi.isConfigured(id)) {
+    try {
+      await hostingerMailApi.verifyMailApi(id);
+      return { ok: true, via: 'hostinger-mail-api' };
+    } catch (err) {
+      console.warn(`[${id}] Hostinger Mail API verify failed, trying SMTP: ${err.message}`);
+    }
+  }
+
   try {
     await createTransporter(id).verify();
-    return true;
+    return { ok: true, via: 'smtp' };
   } catch (err) {
     const hostinger = (cfg.host || '').includes('hostinger');
     if (hostinger && isTimeoutError(err) && cfg.port === 465) {
@@ -126,7 +137,11 @@ async function verifySmtp(accountId) {
       await fallback.verify();
       transporters[id] = fallback;
       console.warn(`[${id}] SMTP 465 timed out; using 587 STARTTLS`);
-      return true;
+      return { ok: true, via: 'smtp' };
+    }
+    if (hostingerMailApi.isConfigured(id) && isTimeoutError(err)) {
+      await hostingerMailApi.verifyMailApi(id);
+      return { ok: true, via: 'hostinger-mail-api' };
     }
     throw err;
   }
@@ -316,30 +331,56 @@ async function sendOneEmail(campaign, contact, accountId, { waitForSent = false 
   }
 
   const timeoutMs = parseInt(process.env.SEND_TIMEOUT_MS || '60000', 10);
-  await Promise.race([
-    t.sendMail(mailOptions),
-    new Promise((_, reject) => {
-      setTimeout(() => reject(new Error(`SMTP send timed out after ${timeoutMs / 1000}s`)), timeoutMs);
-    }),
-  ]);
+  let via = 'smtp';
+  let apiSavedToSent = false;
 
-  let savedToSent = false;
-  const sentPromise = saveCopyToSent(accountId, mailOptions).catch((err) => {
-    console.warn(`[${accountId}] Sent folder copy failed: ${err.message}`);
-    return false;
-  });
-  if (waitForSent) {
-    savedToSent = await sentPromise;
+  if (hostingerMailApi.isConfigured(accountId)) {
+    try {
+      const apiResult = await hostingerMailApi.sendViaMailApi(accountId, mailOptions);
+      via = apiResult.via || 'hostinger-mail-api';
+      apiSavedToSent = !!apiResult.savedToSent;
+    } catch (apiErr) {
+      console.warn(`[${accountId}] Hostinger Mail API send failed, trying SMTP: ${apiErr.message}`);
+      await Promise.race([
+        t.sendMail(mailOptions),
+        new Promise((_, reject) => {
+          setTimeout(() => reject(new Error(`SMTP send timed out after ${timeoutMs / 1000}s`)), timeoutMs);
+        }),
+      ]);
+    }
   } else {
-    void sentPromise;
+    await Promise.race([
+      t.sendMail(mailOptions),
+      new Promise((_, reject) => {
+        setTimeout(() => reject(new Error(`SMTP send timed out after ${timeoutMs / 1000}s`)), timeoutMs);
+      }),
+    ]);
   }
-  return { savedToSent };
+
+  let savedToSent = apiSavedToSent;
+  if (!apiSavedToSent) {
+    const sentPromise = saveCopyToSent(accountId, mailOptions).catch((err) => {
+      console.warn(`[${accountId}] Sent folder copy failed: ${err.message}`);
+      return false;
+    });
+    if (waitForSent) {
+      savedToSent = await sentPromise;
+    } else {
+      void sentPromise;
+    }
+  }
+  return { savedToSent, via };
 }
 
 async function sendTestEmail(campaign, testTo, sampleContact, accountId) {
   const contact = { ...sampleContact, email: testTo };
   const result = await sendOneEmail(campaign, contact, accountId || getDefaultAccount()?.id, { waitForSent: true });
-  return { sentTo: testTo, previewAs: sampleContact.first_name, savedToSent: !!result?.savedToSent };
+  return {
+    sentTo: testTo,
+    previewAs: sampleContact.first_name,
+    savedToSent: !!result?.savedToSent,
+    via: result?.via || 'smtp',
+  };
 }
 
 const MAX_RETRIES = parseInt(process.env.MAX_RETRIES || '3', 10);
@@ -750,15 +791,23 @@ function createCustomTransporter(cfg) {
 }
 
 async function verifyCustomSmtp(cfg) {
+  if (hostingerMailApi.isConfigured('account1') && String(cfg.host || '').includes('hostinger')) {
+    try {
+      await hostingerMailApi.verifyMailApi('account1');
+      return { ok: true, via: 'hostinger-mail-api' };
+    } catch (err) {
+      console.warn(`Hostinger Mail API custom verify failed, trying SMTP: ${err.message}`);
+    }
+  }
   const t = createCustomTransporter(cfg);
   try {
     await t.verify();
-    return true;
+    return { ok: true, via: 'smtp' };
   } catch (err) {
     if ((cfg.host || '').includes('hostinger') && isTimeoutError(err) && parseInt(cfg.port, 10) === 465) {
       const fallback = createCustomTransporter({ ...cfg, port: 587, secure: false });
       await fallback.verify();
-      return true;
+      return { ok: true, via: 'smtp' };
     }
     throw err;
   }
