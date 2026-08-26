@@ -1,5 +1,8 @@
 require('dotenv').config();
 
+const dns = require('dns');
+dns.setDefaultResultOrder('ipv4first');
+
 process.on('unhandledRejection', (err) => {
   console.warn('Unhandled promise rejection (non-fatal):', err?.message || err);
 });

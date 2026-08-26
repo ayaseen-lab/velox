@@ -51,7 +51,7 @@ function loadAccounts() {
     email: process.env.SMTP_ACCOUNT_1_USER || process.env.SMTP_USER,
     pass: process.env.SMTP_ACCOUNT_1_PASS || process.env.SMTP_PASS,
     fromName: process.env.SMTP_ACCOUNT_1_FROM_NAME || process.env.SMTP_FROM_NAME || 'Marcus',
-    host: process.env.SMTP_ACCOUNT_1_HOST || process.env.SMTP_HOST || 'smtp.hostinger.com',
+    host: process.env.SMTP_ACCOUNT_1_HOST || process.env.SMTP_HOST || 'smtp.titan.email',
     port: parseInt(process.env.SMTP_ACCOUNT_1_PORT || process.env.SMTP_PORT || '587', 10),
     secure: (process.env.SMTP_ACCOUNT_1_SECURE || process.env.SMTP_SECURE) === 'true',
     dailyLimit: parseInt(process.env.SMTP_ACCOUNT_1_DAILY_LIMIT || process.env.DAILY_LIMIT || '490', 10),

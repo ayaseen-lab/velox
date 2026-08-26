@@ -17,7 +17,7 @@ const mailboxQueues = new Map();
 function inferImapHost(smtpHost = '') {
   const h = smtpHost.toLowerCase();
   if (h.includes('gmail')) return 'imap.gmail.com';
-  if (h.includes('hostinger')) return 'imap.hostinger.com';
+  if (h.includes('hostinger') || h.includes('titan')) return 'imap.titan.email';
   if (h.includes('outlook') || h.includes('office365')) return 'outlook.office365.com';
   if (h.includes('yahoo') || h.includes('titan')) return 'imap.mail.yahoo.com';
   return null;
@@ -118,6 +118,7 @@ async function saveCopyToSentInner(accountId, mailOptions, imapConfig) {
       disableAutoIdle: true,
       socketTimeout: IMAP_TIMEOUT_MS,
       greetingTimeout: Math.min(IMAP_TIMEOUT_MS, 8000),
+      family: 4,
       tls: { rejectUnauthorized: true },
     });
     attachSafeErrorHandler(client);

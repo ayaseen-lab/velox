@@ -72,6 +72,7 @@ function smtpTransportOptions(cfg) {
     connectionTimeout: 20000,
     greetingTimeout: 15000,
     socketTimeout: 30000,
+    family: 4,
     tls: {
       minVersion: 'TLSv1.2',
       servername: host,
