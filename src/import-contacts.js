@@ -26,6 +26,7 @@ function normalizeContact(row) {
   const industry = pick(row, 'industry', 'company industry', 'source', 'authority type');
   const phone = pick(row, 'phone', 'phone number', 'mobile', 'tel');
   const companyProfile = pick(row, 'company profile', 'company about', 'about', 'description', 'company description', 'specialties', 'keywords');
+  const dot = pick(row, 'dot', 'usdot', 'dot number', 'dot_number', 'usdot number', 'usd ot', 'dot#', 'usdot#', 'docket number');
   const name = pick(row, 'contact name', 'contact', 'name', 'full name', 'full_name')
     || [firstName, lastName].filter(Boolean).join(' ');
   const nameParts = name.split(/\s+/).filter(Boolean);
@@ -44,6 +45,7 @@ function normalizeContact(row) {
     industry,
     phone,
     company_profile: companyProfile,
+    dot,
   };
 }
 

@@ -84,22 +84,25 @@ function validateCampaign({ subject, bodyHtml, preheader = '' }) {
   if (linkCount > 1) warnings.push(`${linkCount} links detected — plain text URLs are safer than clickable links`);
 
   const strongCount = (bodyHtml.match(/<strong>|<b>/gi) || []).length;
-  if (strongCount > 2) warnings.push('Too much bold text — plain emails look more personal');
+  if (strongCount > 12) warnings.push('Too much bold text — plain emails look more personal');
 
-  const capsWords = (plain.match(/\b[A-Z]{2,}\b/g) || []).filter(w => !['AI', 'API', 'AWS', 'BLE', 'CAN', 'C', 'GSM', 'HTTP', 'HTTPS', 'I2C', 'IoT', 'ML', 'MQTT', 'OCR', 'OTA', 'REST', 'SPI', 'SQL', 'TCP', 'UART', 'USB', 'VP', 'CTO', 'CEO'].includes(w));
+  const capsWords = (plain.match(/\b[A-Z]{2,}\b/g) || []).filter(w => !['AI', 'API', 'AWS', 'BLE', 'CAN', 'C', 'GSM', 'HTTP', 'HTTPS', 'I2C', 'IoT', 'ML', 'MQTT', 'OCR', 'OTA', 'REST', 'SPI', 'SQL', 'TCP', 'UART', 'USB', 'VP', 'CTO', 'CEO', 'DOT', 'USDOT', 'MC', 'RPM', 'TONU', 'W'].includes(w) && w.length > 1);
   if (capsWords.length > 8) warnings.push('Too many ALL CAPS words in body — keep acronyms only where needed');
 
   const imageCount = (bodyHtml.match(/<img\s/gi) || []).length;
   if (imageCount > 0) warnings.push('Images in cold outreach can hurt deliverability — prefer plain text style');
 
-  if (plain.length > 3200) warnings.push('Very long emails can hurt inbox placement — consider trimming if deliverability drops');
+  if (plain.length > 5500) warnings.push('Very long emails can hurt inbox placement — consider trimming if deliverability drops');
   if (plain.length < 80) warnings.push('Very short email body — add a little more context');
 
   for (const phrase of SPAM_PHRASES) {
     if (combined.includes(phrase)) warnings.push(`Avoid spam-style phrase: "${phrase}"`);
   }
 
+  // Skip common business words that are fine in 1:1 dispatch outreach
+  const allowedBusinessWords = new Set(['free', 'guarantee', 'opportunity', 'save']);
   for (const word of SPAM_WORDS) {
+    if (allowedBusinessWords.has(word)) continue;
     const re = new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
     if (re.test(combined)) warnings.push(`Avoid spam trigger word: "${word}"`);
   }

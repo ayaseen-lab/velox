@@ -1,100 +1,169 @@
 const DEFAULT_EMAIL = {
   id: 'default',
-  version: 13,
-  name: 'Ahmad Yaseen - Senior Software Developer (IoT, AI, Embedded, Full Stack)',
-  subject: '{{personalized_subject}}',
+  version: 14,
+  name: 'LaneForge Dispatch — Marcus Hale (Carrier Outreach)',
+  subject: 'More Revenue, Less Deadhead & Real Home Time with LaneForge Dispatch',
   preheader: '',
   body_html: `<p>Hi {{first_name}},</p>
 
 <p>{{personalized_opener}}</p>
 
-<p>I am reaching out about senior engineering roles focused on embedded systems, IoT, AI, full-stack development, robotics, backend engineering, cloud architecture, and scalable software systems.</p>
+<p>I’m <strong>Marcus Hale</strong> from <strong>LaneForge Dispatch</strong>. We help owner-operators and carriers find better freight opportunities, reduce empty miles, save time, and keep their trucks moving efficiently.</p>
 
-<p>I am a Senior Software Developer with 5+ years of experience building production-grade embedded, AI-enabled, cloud-connected, and real-time software systems. I would describe myself as a jack of sundry trades rather than a master of one, which has helped me work across firmware, AI, IoT, backend, and full-stack layers on the same product without waiting on handoffs.</p>
+<p>At LaneForge, we don’t believe dispatching should simply mean sending random loads from one state to another. Our approach is to understand your truck, equipment, home base, preferred lanes, and business goals—then build a dispatch strategy around you.</p>
 
-<p>My background covers firmware, hardware automation, IoT platforms, AI and computer vision pipelines, WebRTC, backend services, cloud architecture, and distributed systems. I am especially interested in roles that sit at the intersection of embedded hardware and AI, where software needs to be reliable on the device and useful in the cloud.</p>
+<p style="margin:22px 0 8px;font-size:16px;font-weight:600;">What Makes LaneForge Different?</p>
 
-<p style="margin:18px 0 6px;">Embedded and firmware</p>
-<ul style="margin-top:0;padding-left:22px;">
-<li>C++17/20, Embedded C, Python, RTOS, Zephyr, Embedded Linux, ARM Cortex-M, nRF52840, STM32, ESP32, Raspberry Pi</li>
+<p style="margin:18px 0 6px;font-weight:600;">Higher-Paying Loads &amp; Better Efficiency</p>
+<p>Our dispatch team works to maximize the value of every week by focusing on:</p>
+<ul style="margin:0 0 14px;padding-left:22px;">
+<li>Negotiating competitive rates</li>
+<li>Finding stronger-paying freight opportunities</li>
+<li>Minimizing unnecessary deadhead</li>
+<li>Stacking reloads where possible</li>
+<li>Using strong broker relationships and load networks</li>
+<li>Planning routes for better efficiency</li>
+<li>Reducing unnecessary waiting and downtime</li>
 </ul>
+<p>Depending on your equipment, market conditions, lanes, and availability, better planning and reduced empty miles can make a meaningful difference in your weekly revenue and overall profitability.</p>
 
-<p style="margin:18px 0 6px;">IoT and communication</p>
-<ul style="margin-top:0;padding-left:22px;">
-<li>BLE, MQTT, MQTT-SN, WebRTC, CAN Bus, Modbus, UART, SPI, I2C, USB HID, HTTP/HTTPS, TCP/IP, WebSockets, GSM/4G</li>
+<p style="margin:18px 0 6px;font-weight:600;">Friday Home Loads — Real Home Time</p>
+<p>Your home time is planned, not treated as an afterthought.</p>
+<p>We plan your week <strong>backward from your desired home time</strong>. By Wednesday or Thursday, we are already working to position your truck for a Friday delivery close to home—or a short paid leg that brings you back.</p>
+<p>Our goal is to help you get:</p>
+<ul style="margin:0 0 14px;padding-left:22px;">
+<li>Real weekends at home</li>
+<li>Less time spending your reset at a truck stop</li>
+<li>Better planning around family and personal commitments</li>
+<li>A clear weekly route strategy</li>
+<li>Loads positioned around your home schedule</li>
 </ul>
+<p>We work hard to honor the home-time commitments and planning agreed with you.</p>
 
-<p style="margin:18px 0 6px;">AI, machine vision, and automation</p>
-<ul style="margin-top:0;padding-left:22px;">
-<li>OpenCV, OCR, template matching, edge inference, image-based analysis, hardware-in-the-loop testing, GPIO control, power cycling, multi-device orchestration, autonomous test flows, computer vision for inspection, rule-based and ML-assisted decision logic, automated fault detection, data pipelines for model-ready datasets, practical AI on constrained devices where latency and reliability matter</li>
+<p style="margin:18px 0 6px;font-weight:600;">Save Valuable Time</p>
+<p>Driving a truck is already a full-time job. You shouldn’t have to spend hours searching load boards and calling brokers while also managing your business.</p>
+<p>We can assist with:</p>
+<ul style="margin:0 0 14px;padding-left:22px;">
+<li>Searching for freight opportunities</li>
+<li>Monitoring load boards</li>
+<li>Calling and communicating with brokers</li>
+<li>Negotiating rates</li>
+<li>Managing rate confirmations</li>
+<li>Load setup and dispatch coordination</li>
+<li>Basic paperwork coordination</li>
+<li>Invoices and factoring-related documentation</li>
+<li>Insurance certificate requests</li>
+<li>Detention claims</li>
+<li>Layover requests</li>
+<li>TONU claims</li>
+<li>Other dispatch-related coordination</li>
 </ul>
+<p>This can save you valuable hours of administrative work, allowing you to focus on driving and running your business.</p>
 
-<p style="margin:18px 0 6px;">Backend, cloud, and DevOps</p>
-<ul style="margin-top:0;padding-left:22px;">
-<li>AWS, Azure, Oracle Cloud, Docker, Jenkins, GitHub Actions, PostgreSQL, REST APIs, Grafana, scalable backend architecture, real-time telemetry pipelines</li>
+<p style="margin:18px 0 6px;font-weight:600;">Dedicated Support &amp; Full Control</p>
+<p>When you work with LaneForge, you remain in control of your truck and your business.</p>
+<p>You get:</p>
+<ul style="margin:0 0 14px;padding-left:22px;">
+<li>A dedicated point of contact</li>
+<li>Support for dispatch-related issues</li>
+<li>Assistance with load status and coordination</li>
+<li>No forced dispatch</li>
+<li>You approve every load before accepting it</li>
+<li>Your preferred lanes and operating preferences are considered</li>
 </ul>
+<p><strong>You always have the final decision.</strong></p>
 
-<p style="margin:18px 0 6px;">Security and system design</p>
-<ul style="margin-top:0;padding-left:22px;">
-<li>Secure BLE pairing, encrypted communication, OTA updates, geofencing, fault-tolerant firmware, scalable device-cloud architecture</li>
-</ul>
-
-<p>Beyond full-time engineering roles, I also help teams with web platforms, APIs, dashboards, or internal tools when build capacity is useful. I keep handoffs simple and pass along full source code and documentation so your team owns what we build.</p>
-
+<p style="margin:18px 0 6px;font-weight:600;">Core Lanes That Actually Work</p>
 <p>{{location_line}}</p>
+<p>Instead of chasing random loads all over the country, we help build and maintain <strong>2–3 core lanes</strong> around your home base and equipment.</p>
+<p>We focus on lanes with:</p>
+<ul style="margin:0 0 14px;padding-left:22px;">
+<li>Strong outbound rates</li>
+<li>Fast and reliable reload opportunities</li>
+<li>Low deadhead miles</li>
+<li>Consistent freight volume</li>
+<li>Familiar operating areas</li>
+<li>Better weekly planning</li>
+</ul>
+<p>The objective is simple: <strong>keep your truck loaded, reduce empty miles, and improve overall RPM and efficiency.</strong></p>
+
+<p style="margin:18px 0 6px;font-weight:600;">Flexible &amp; Simple</p>
+<p>We believe trust is earned through results.</p>
+<ul style="margin:0 0 14px;padding-left:22px;">
+<li>No forced long-term commitment</li>
+<li>Flexible working arrangement</li>
+<li>No unnecessary restrictions</li>
+<li>Clear and transparent communication</li>
+<li>Easy onboarding process</li>
+</ul>
+
+<p style="margin:18px 0 6px;font-weight:600;">Equipment We Support</p>
+<p>We work with carriers operating:</p>
+<ul style="margin:0 0 14px;padding-left:22px;">
+<li>Dry Vans</li>
+<li>Reefers</li>
+<li>Flatbeds</li>
+<li>Step Decks</li>
+<li>Power Only</li>
+<li>Box Trucks</li>
+<li>Hotshots</li>
+<li>Cargo Vans</li>
+<li>Sprinter Vans</li>
+</ul>
+<p>We can help identify freight opportunities based on your equipment, location, preferred lanes, and availability.</p>
+
+<p style="margin:18px 0 6px;font-weight:600;">Documents Needed to Get Started</p>
+<p>To complete carrier onboarding and prepare for dispatch operations, we typically require:</p>
+<ul style="margin:0 0 14px;padding-left:22px;">
+<li>MC Authority</li>
+<li>W-9 Form</li>
+<li>Certificate of Insurance</li>
+<li>Notice of Assignment (if using a factoring company)</li>
+<li>Voided Check, where applicable</li>
+</ul>
+<p>These documents are used for carrier onboarding, broker/load setup, and required verification processes.</p>
+
+<p style="margin:18px 0 6px;font-weight:600;">Why LaneForge?</p>
+<p><strong>Better freight opportunities. Lower deadhead. Stronger lane planning. More time saved. Better home-time planning.</strong></p>
+<p>You shouldn’t have to choose between making money and having a life outside the truck.</p>
+<p>At <strong>LaneForge Dispatch</strong>, our goal is to help you work toward both.</p>
 
 <p>{{personalized_closing}}</p>
 
-<p>Selected work and case studies: <strong>https://ahmad.xynovix.com/</strong></p>
+<p>We look forward to working with you.</p>
 
-<p>My resume is attached. If a short call would be useful: calendly.com/ahmadrandhawa01/30min</p>
-
-<p>Thank you for your time, {{first_name}}.</p>
-
-<p>Best regards,<br>
-Ahmad Yaseen<br>
-Senior Software Developer | IoT, AI, Embedded and Full Stack Engineer<br>
-ahmadrandhawa01@gmail.com<br>
-Portfolio: <strong>https://ahmad.xynovix.com/</strong><br>
-linkedin.com/in/ahmadyaseen1</p>`,
+<p>Best regards,</p>`,
   test_email: 'ahmadjutt463@gmail.com',
   sample_contact: {
-    first_name: 'Andrew',
-    last_name: '',
-    name: 'Andrew',
-    title: 'Founder',
-    company: 'Collier & Associates',
-    city: 'Chicago',
-    country: 'United States',
-    industry: 'Professional Services',
-    company_profile: 'Collier & Associates provides professional services and advisory support to growing organizations.',
-    website: 'https://collier-example.com',
-    linkedin: 'https://linkedin.com/in/andrew-example',
-    email: 'andrew@example.com',
+    first_name: 'Sherika',
+    last_name: 'Rogers',
+    name: 'Sherika Rogers',
+    title: 'Owner',
+    company: 'Inna Gee 365 LLC',
+    city: 'Portsmouth',
+    country: 'VA',
+    industry: 'Motor Carrier of Property',
+    company_profile: 'Owner-operator trucking company focused on dry van freight.',
+    website: '',
+    linkedin: '',
+    email: 'innagee365@outlook.com',
+    dot: '1234567',
   },
 };
 
 const FOLLOW_UP_EMAIL = {
   id: 'follow-up',
-  version: 2,
-  name: 'Follow-up — gentle nudge',
-  subject: '{{personalized_subject}}',
+  version: 3,
+  name: 'LaneForge Follow-up — gentle nudge',
+  subject: '{{first_name}}, quick follow-up from LaneForge Dispatch',
   preheader: '',
   body_html: `<p>Hi {{first_name}},</p>
 
-<p>I wanted to follow up briefly on my earlier note about senior engineering work — embedded, IoT, AI, and full-stack systems.</p>
+<p>I wanted to follow up briefly on my earlier note about LaneForge Dispatch — better-paying freight, less deadhead, and planned Friday home time.</p>
 
 <p>{{personalized_closing}}</p>
 
-<p>Selected work: <strong>https://ahmad.xynovix.com/</strong></p>
-
-<p>Resume is still attached for convenience. Calendar: calendly.com/ahmadrandhawa01/30min</p>
-
-<p>Best regards,<br>
-Ahmad Yaseen<br>
-Senior Software Developer | IoT, AI, Embedded and Full Stack Engineer<br>
-Portfolio: <strong>https://ahmad.xynovix.com/</strong><br>
-linkedin.com/in/ahmadyaseen1</p>`,
+<p>Best regards,</p>`,
 };
 
 const TEMPLATES = { default: DEFAULT_EMAIL, 'job-outreach': DEFAULT_EMAIL, 'follow-up': FOLLOW_UP_EMAIL };

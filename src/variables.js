@@ -12,10 +12,12 @@ const DATA_VARIABLES = [
   { token: '{{industry}}', label: 'Industry', source: 'data', field: 'industry' },
   { token: '{{website}}', label: 'Website', source: 'data', field: 'website' },
   { token: '{{linkedin}}', label: 'LinkedIn', source: 'data', field: 'linkedin' },
-  { token: '{{personalized_opener}}', label: 'AI Opener', source: 'generated', field: 'personalized_opener' },
-  { token: '{{personalized_closing}}', label: 'AI Closing', source: 'generated', field: 'personalized_closing' },
-  { token: '{{personalized_subject}}', label: 'AI Subject', source: 'generated', field: 'personalized_subject' },
-  { token: '{{location_line}}', label: 'AI Location / Timezone Line', source: 'generated', field: 'location_line' },
+  { token: '{{dot}}', label: 'DOT / USDOT', source: 'data', field: 'dot' },
+  { token: '{{usdot}}', label: 'USDOT (alt)', source: 'data', field: 'dot' },
+  { token: '{{personalized_opener}}', label: 'Personalized Opener', source: 'generated', field: 'personalized_opener' },
+  { token: '{{personalized_closing}}', label: 'Personalized Closing', source: 'generated', field: 'personalized_closing' },
+  { token: '{{personalized_subject}}', label: 'Personalized Subject', source: 'generated', field: 'personalized_subject' },
+  { token: '{{location_line}}', label: 'Location / Lane Line', source: 'generated', field: 'location_line' },
   { token: '{{portfolio_url}}', label: 'Portfolio URL', source: 'static', field: 'portfolio_url' },
 ];
 

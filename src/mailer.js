@@ -147,16 +147,27 @@ async function verifySmtp(accountId) {
   }
 }
 
+function toDisplayCase(value) {
+  const s = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!s) return '';
+  if (s !== s.toUpperCase() || s.length < 2) return s;
+  return s
+    .toLowerCase()
+    .replace(/\b([a-z])/g, (m) => m.toUpperCase())
+    .replace(/\b(Llc|Inc|Ltd|Llp|Dba)\b/g, (m) => m.toUpperCase());
+}
+
 function personalize(text, contact) {
   const c = typeof contact === 'object' ? contact : { name: contact, email: arguments[2] };
-  const first = c.first_name || (c.name || '').split(' ')[0] || 'there';
-  const last = c.last_name || '';
-  const fullName = c.name || [first, last].filter(Boolean).join(' ') || 'there';
-  const company = (c.company || '').trim();
-  const title = (c.title || '').trim();
-  const city = (c.city || '').trim();
-  const country = (c.country || '').trim();
+  const first = toDisplayCase(c.first_name) || toDisplayCase(c.name).split(' ')[0] || 'there';
+  const last = toDisplayCase(c.last_name);
+  const fullName = toDisplayCase(c.name) || [first, last].filter(Boolean).join(' ') || 'there';
+  const company = toDisplayCase(c.company);
+  const title = toDisplayCase(c.title);
+  const city = toDisplayCase(c.city);
+  const country = String(c.country || '').trim();
   const location = city || country || '';
+  const dot = String(c.dot || c.usdot || c.dot_number || '').replace(/[^0-9]/g, '') || String(c.dot || '').trim();
 
   const map = {
     '{{first_name}}': first,
@@ -172,11 +183,13 @@ function personalize(text, contact) {
     '{{country}}': country,
     '{{location}}': location,
     '{{industry}}': (c.industry || '').trim(),
+    '{{dot}}': dot,
+    '{{usdot}}': dot,
     '{{personalized_opener}}': generatePersonalizedOpener(c),
     '{{personalized_closing}}': generatePersonalizedClosing(c),
     '{{personalized_subject}}': generatePersonalizedSubject(c),
     '{{location_line}}': generateLocationLine(c),
-    '{{portfolio_url}}': 'https://ahmad.xynovix.com/',
+    '{{portfolio_url}}': 'https://laneforge.xynovix.com/',
   };
 
   for (const cv of store.getCustomVariables()) {
@@ -220,13 +233,13 @@ function getAccountSignature(accountId) {
   const isMarcus = acc.id === 'account1' || /marcus\.laneforge@/i.test(acc.email);
   if (!isMarcus) return { html: '', text: '' };
 
-  const name = acc.fromName || 'Marcus';
+  const name = acc.fromName || 'Marcus Hale';
   const email = acc.email;
   const siteUrl = 'https://laneforge.xynovix.com';
   const siteLabel = 'laneforge.xynovix.com';
   return {
-    html: `<p style="margin:28px 0 0;font-size:14px;line-height:1.55;color:#222;">${escapeHtml(name)}<br>LaneForge<br><a href="mailto:${escapeHtml(email)}" style="color:#222;text-decoration:none;">${escapeHtml(email)}</a><br><a href="${siteUrl}" style="color:#222;">${siteLabel}</a></p>`,
-    text: `\n\n${name}\nLaneForge\n${email}\n${siteUrl}`,
+    html: `<p style="margin:28px 0 0;font-size:14px;line-height:1.55;color:#222;">${escapeHtml(name)}<br>Business Development<br>LaneForge Dispatch<br><a href="${siteUrl}" style="color:#222;">${siteLabel}</a><br><a href="mailto:${escapeHtml(email)}" style="color:#222;text-decoration:none;">${escapeHtml(email)}</a></p>`,
+    text: `\n\n${name}\nBusiness Development\nLaneForge Dispatch\n${siteUrl}\n${email}`,
   };
 }
 
