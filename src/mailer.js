@@ -5,7 +5,7 @@ const store = require('./store');
 const { getAccounts, getAccount, getDefaultAccount, resetAccountsCache } = require('./accounts');
 const { saveCopyToSent } = require('./save-to-sent');
 const hostingerMailApi = require('./hostinger-mail-api');
-const { getWarmupPlan, jitterDelay } = require('./warmup');
+const { getWarmupPlan, jitterDelay, warmupAllowsRecipient, isWarmupSeedOnly, getWarmupSeedEmails } = require('./warmup');
 const { htmlToPlain, wrapHtmlEmail, classifySmtpError } = require('./email-utils');
 const {
   generatePersonalizedOpener,
@@ -206,18 +206,45 @@ function personalize(text, contact) {
   return result;
 }
 
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function getAccountSignature(accountId) {
+  const acc = getAccount(accountId);
+  if (!acc?.email) return { html: '', text: '' };
+  const isMarcus = acc.id === 'account1' || /marcus\.laneforge@/i.test(acc.email);
+  if (!isMarcus) return { html: '', text: '' };
+
+  const name = acc.fromName || 'Marcus';
+  const email = acc.email;
+  const siteUrl = 'https://laneforge.xynovix.com';
+  const siteLabel = 'laneforge.xynovix.com';
+  return {
+    html: `<p style="margin:28px 0 0;font-size:14px;line-height:1.55;color:#222;">${escapeHtml(name)}<br>LaneForge<br><a href="mailto:${escapeHtml(email)}" style="color:#222;text-decoration:none;">${escapeHtml(email)}</a><br><a href="${siteUrl}" style="color:#222;">${siteLabel}</a></p>`,
+    text: `\n\n${name}\nLaneForge\n${email}\n${siteUrl}`,
+  };
+}
+
 function buildEmailContent(campaign, contact, accountId) {
   const cfg = getSmtpConfig(accountId);
   const subject = personalize(campaign.subject, contact);
   const rawHtml = personalize(campaign.body_html, contact);
   const preheader = personalize(campaign.preheader || '', contact);
+  const signature = getAccountSignature(accountId);
 
-  const html = campaign.include_unsubscribe === true
-    ? wrapHtmlEmail(rawHtml, { preheader, fromEmail: cfg.from })
-    : wrapHtmlEmail(rawHtml, { preheader });
+  const html = wrapHtmlEmail(rawHtml, {
+    preheader,
+    fromEmail: campaign.include_unsubscribe === true ? cfg.from : '',
+    signatureHtml: signature.html,
+  });
 
   const plainSource = campaign.body_text || htmlToPlain(rawHtml);
-  const text = personalize(plainSource, contact);
+  const text = personalize(plainSource, contact) + (signature.text || '');
 
   return { subject, html, text, cfg };
 }
@@ -317,8 +344,7 @@ async function sendOneEmail(campaign, contact, accountId, { waitForSent = false 
     },
   };
 
-  const acc = getAccount(accountId);
-  if (campaign.include_unsubscribe === true || acc?.warmup) {
+  if (campaign.include_unsubscribe === true) {
     mailOptions.headers['List-Unsubscribe'] = `<mailto:${cfg.from}?subject=unsubscribe>`;
     mailOptions.headers['List-Unsubscribe-Post'] = 'List-Unsubscribe=One-Click';
   }
@@ -412,6 +438,20 @@ async function processNextEmailForAccount(accountId) {
     store.markQueueSkippedDuplicate(item.queue_id, item.campaign_id, item.contact_id, item.email, meta);
     store.updateCampaignStatuses();
     console.log(`⊘ [${accountId}] Skipped duplicate ${item.email}`);
+    return { success: true, skipped: true, email: item.email, accountId };
+  }
+
+  if (!warmupAllowsRecipient(accountId, item.email)) {
+    store.markQueueSkippedDuplicate(
+      item.queue_id,
+      item.campaign_id,
+      item.contact_id,
+      item.email,
+      meta,
+      'Warmup seed-only — carrier list blocked until later warmup days',
+    );
+    store.updateCampaignStatuses();
+    console.log(`⊘ [${accountId}] Warmup seed-only, skipped ${item.email}`);
     return { success: true, skipped: true, email: item.email, accountId };
   }
 
@@ -593,7 +633,10 @@ function startAccountSender(accountId) {
     }
     // Also queue any remaining eligible contacts into this account's campaigns
     for (const camp of store.getCampaigns().filter(c => (c.smtp_account_id || 'account1') === accountId)) {
-      const ids = store.getEligibleContactIds(camp.list_id || 'list1', { skipAlreadySent: true });
+      const ids = store.getEligibleContactIds(camp.list_id || 'list1', {
+        skipAlreadySent: true,
+        emailAllowlist: isWarmupSeedOnly(accountId) ? getWarmupSeedEmails() : null,
+      });
       if (ids.length === 0) continue;
       const queued = store.queueCampaign(camp.id, ids);
       if (queued > 0) {

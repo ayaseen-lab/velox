@@ -118,9 +118,38 @@ function getWarmupPlan(accountId) {
   };
 }
 
+function getWarmupSeedEmails() {
+  const raw = process.env.WARMUP_SEED_EMAILS || '';
+  return [...new Set(
+    raw.split(/[,\s]+/).map((e) => e.trim().toLowerCase()).filter((e) => e.includes('@')),
+  )];
+}
+
+function getWarmupSeedDays() {
+  const n = parseInt(process.env.WARMUP_SEED_DAYS || '14', 10);
+  return Number.isFinite(n) && n > 0 ? n : 14;
+}
+
+function isWarmupSeedOnly(accountId) {
+  const plan = getWarmupPlan(accountId);
+  if (!plan) return false;
+  return plan.day <= getWarmupSeedDays();
+}
+
+function warmupAllowsRecipient(accountId, email) {
+  if (!isWarmupSeedOnly(accountId)) return true;
+  const seeds = getWarmupSeedEmails();
+  if (!seeds.length) return false;
+  return seeds.includes(String(email || '').trim().toLowerCase());
+}
+
 module.exports = {
   SCHEDULE,
   getWarmupPlan,
   jitterDelay,
   todayInZone,
+  getWarmupSeedEmails,
+  getWarmupSeedDays,
+  isWarmupSeedOnly,
+  warmupAllowsRecipient,
 };

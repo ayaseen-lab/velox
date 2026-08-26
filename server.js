@@ -13,6 +13,7 @@ const express = require('express');
 const multer = require('multer');
 const { parseContactsCsv, parseContactsXlsx } = require('./src/import-contacts');
 const { getTemplate, listTemplates } = require('./src/campaign-templates');
+const { getWarmupSeedEmails, isWarmupSeedOnly } = require('./src/warmup');
 const path = require('path');
 const fs = require('fs');
 const cron = require('node-cron');
@@ -492,15 +493,20 @@ app.post('/api/campaigns/:id/send', (req, res) => {
   }
 
   const isFollowUp = campaign.campaign_type === 'follow_up';
-  const contactIds = isFollowUp
+  let contactIds = isFollowUp
     ? store.getSuccessfulContactIds(campaign.parent_campaign_id)
-    : store.getEligibleContactIds(listId, { skipAlreadySent: true });
+    : store.getEligibleContactIds(listId, {
+      skipAlreadySent: true,
+      emailAllowlist: isWarmupSeedOnly(accountId) ? getWarmupSeedEmails() : null,
+    });
 
   if (contactIds.length === 0) {
     return res.status(400).json({
       error: isFollowUp
         ? 'No successful recipients found for follow-up'
-        : 'No eligible contacts in selected list (all sent, bounced, or blocked)',
+        : isWarmupSeedOnly(accountId)
+          ? 'Warmup is seed-only. Add seed inboxes or wait until later warmup days before sending the carrier list.'
+          : 'No eligible contacts in selected list (all sent, bounced, or blocked)',
     });
   }
 

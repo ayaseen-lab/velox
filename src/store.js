@@ -276,12 +276,20 @@ function getActiveContactIds(listId = null) {
   });
 }
 
-function getEligibleContactIds(listId, { skipAlreadySent = true } = {}) {
+function getContactById(id) {
+  return withStoreRead((data) => data.contacts.find((c) => c.id === id) || null);
+}
+
+function getEligibleContactIds(listId, { skipAlreadySent = true, emailAllowlist = null } = {}) {
   return withStoreRead((data) => {
     const sentEmails = skipAlreadySent ? buildGloballySentEmailSet(data) : new Set();
+    const allow = Array.isArray(emailAllowlist) && emailAllowlist.length
+      ? new Set(emailAllowlist.map((e) => String(e).toLowerCase()))
+      : null;
     return data.contacts
       .filter(c => c.list_id === listId && c.status === 'active')
       .filter(c => !skipAlreadySent || !sentEmails.has(c.email.toLowerCase()))
+      .filter(c => !allow || allow.has(c.email.toLowerCase()))
       .map(c => c.id);
   });
 }
@@ -668,12 +676,12 @@ function pauseCampaignsForAccount(accountId) {
   });
 }
 
-function markQueueSkippedDuplicate(queueId, campaignId, contactId, email, meta = {}) {
+function markQueueSkippedDuplicate(queueId, campaignId, contactId, email, meta = {}, reason) {
   withStore((data) => {
     const q = data.send_queue.find(item => item.id === queueId);
     if (q) {
       q.status = 'skipped';
-      q.error_message = 'Skipped — already sent to this email';
+      q.error_message = reason || 'Skipped — already sent to this email';
       q.sent_at = now();
     }
     data.send_log.push({
@@ -1190,7 +1198,7 @@ function markBounce(email, reason = 'Delivery failed') {
 
 module.exports = {
   getContacts, addContact, addContactsBulk, deleteContact, deleteAllContacts,
-  getActiveContactIds, getEligibleContactIds, getSuccessfulContactIds, getCampaignSentCount, getContactCounts, getAllListCounts,
+  getContactById, getActiveContactIds, getEligibleContactIds, getSuccessfulContactIds, getCampaignSentCount, getContactCounts, getAllListCounts,
   suppressContact, getSentEmailsForList,
   getCampaigns, getCampaign, createCampaign, updateCampaign, setCampaignStatus, getCampaignsByStatus,
   queueCampaign, getPendingQueue, getPendingCount, getQueueRetries, requeueItem, bumpQueueItemToEnd, deferQueueItem,
