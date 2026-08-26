@@ -34,7 +34,9 @@ function getImapConfig(accountId) {
   const enabled = perAccountFlag === 'false' ? false : (perAccountFlag === 'true' || !globalOff);
   if (!enabled) return null;
 
-  const host = (num && process.env[`SMTP_ACCOUNT_${num}_IMAP_HOST`]) || inferImapHost(acc.host);
+  const host = (num && process.env[`SMTP_ACCOUNT_${num}_IMAP_HOST`])
+    || process.env.IMAP_HOST
+    || inferImapHost(acc.host);
   if (!host) return null;
 
   const port = parseInt(
