@@ -575,6 +575,15 @@ app.post('/api/campaigns/:id/resume', (req, res) => {
   res.json({ success: true });
 });
 
+app.post('/api/campaigns/:id/retry-failed', (req, res) => {
+  const id = parseInt(req.params.id);
+  const campaign = store.getCampaign(id);
+  if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+  const result = store.retryFailedCampaign(id);
+  if (result.error) return res.status(400).json({ error: result.error });
+  res.json({ success: true, ...result });
+});
+
 app.post('/api/campaigns/:id/follow-up', (req, res) => {
   const parentId = parseInt(req.params.id);
   const parent = store.getCampaign(parentId);

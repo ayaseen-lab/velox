@@ -696,6 +696,45 @@ function releaseSendingItems(accountId = null) {
   });
 }
 
+function isRetryableFailure(type, message) {
+  const t = String(type || '').toLowerCase();
+  const msg = String(message || '').toLowerCase();
+  if (t === 'rate_limit' || t === 'temporary') return true;
+  const looksRateLimit = (
+    msg.includes('429')
+    || msg.includes('too many')
+    || msg.includes('rate limit')
+    || msg.includes('rate_limit')
+    || msg.includes('throttl')
+    || msg.includes('try again later')
+    || msg.includes('sending rate')
+  );
+  const looksTemporary = (
+    msg.includes('timed out')
+    || msg.includes('timeout')
+    || msg.includes('etimedout')
+    || msg.includes('temporary')
+    || msg.includes('econnreset')
+    || msg.includes('enetunreach')
+    || msg.includes('lookup failure')
+  );
+  const looksPermanent = (
+    t === 'invalid_recipient'
+    || t === 'daily_quota'
+    || t === 'duplicate'
+    || msg.includes('address not found')
+    || msg.includes('mailbox not found')
+    || msg.includes('user unknown')
+    || msg.includes('does not exist')
+    || msg.includes('given data was invalid')
+  );
+  if (looksPermanent && !looksRateLimit) return false;
+  if (t === 'blocked' || t === 'permanent') {
+    return looksRateLimit && !msg.includes('spam');
+  }
+  return looksRateLimit || looksTemporary;
+}
+
 function restoreTransientBlockedContacts(listIds = null) {
   return withStore((data) => {
     const lists = listIds ? new Set(listIds) : null;
@@ -703,24 +742,106 @@ function restoreTransientBlockedContacts(listIds = null) {
     for (const contact of data.contacts) {
       if (contact.status !== 'blocked' && contact.status !== 'bounced') continue;
       if (lists && !lists.has(contact.list_id)) continue;
-      const reason = (contact.failure_reason || '').toLowerCase();
-      const transient =
-        reason.includes('timed out') ||
-        reason.includes('timeout') ||
-        reason.includes('enetunreach') ||
-        reason.includes('econn') ||
-        reason.includes('connect ') ||
-        reason.includes('lookup failure') ||
-        reason.includes('451 4.3.0') ||
-        reason.includes('network') ||
-        reason.includes('temporary');
-      if (!transient) continue;
+      const reason = contact.failure_reason || '';
+      if (!isRetryableFailure('', reason)) continue;
       contact.status = 'active';
       contact.failure_reason = null;
       contact.suppressed_at = null;
       restored++;
     }
     return restored;
+  });
+}
+
+function retryFailedCampaign(campaignId) {
+  return withStore((data) => {
+    const camp = data.campaigns.find(c => c.id === campaignId);
+    if (!camp) return { error: 'Campaign not found' };
+
+    const sentEmails = buildGloballySentEmailSet(data);
+    const latestFailByContact = new Map();
+    for (const log of data.send_log) {
+      if (log.campaign_id !== campaignId || log.status !== 'failed') continue;
+      latestFailByContact.set(log.contact_id, log);
+    }
+
+    let alreadySentSkipped = 0;
+    let requeued = 0;
+    let restoredContacts = 0;
+    let permanentSkipped = 0;
+
+    for (const q of data.send_queue) {
+      if (q.campaign_id !== campaignId) continue;
+      if (q.status !== 'failed' && q.status !== 'skipped') continue;
+
+      const contact = data.contacts.find(c => c.id === q.contact_id);
+      if (!contact) continue;
+      const emailKey = (contact.email || '').toLowerCase();
+      if (emailKey && sentEmails.has(emailKey)) {
+        alreadySentSkipped++;
+        continue;
+      }
+
+      const failLog = latestFailByContact.get(q.contact_id);
+      const failType = failLog?.failure_type || '';
+      const failMsg = failLog?.error_message || q.error_message || contact.failure_reason || '';
+      if (q.status === 'skipped' && String(q.error_message || '').toLowerCase().includes('already sent')) {
+        alreadySentSkipped++;
+        continue;
+      }
+      if (!isRetryableFailure(failType, failMsg)) {
+        permanentSkipped++;
+        continue;
+      }
+
+      if (contact.status === 'bounced' || contact.status === 'blocked') {
+        if (!isRetryableFailure(failType, contact.failure_reason || failMsg)) {
+          permanentSkipped++;
+          continue;
+        }
+        contact.status = 'active';
+        contact.failure_reason = null;
+        contact.suppressed_at = null;
+        restoredContacts++;
+      }
+      if (contact.status !== 'active') {
+        permanentSkipped++;
+        continue;
+      }
+
+      q.status = 'pending';
+      q.error_message = null;
+      q.retry_count = 0;
+      q.deferred_until = null;
+      q.sent_at = null;
+      requeued++;
+    }
+
+    const remainingFailed = data.send_queue.filter(q =>
+      q.campaign_id === campaignId && q.status === 'failed'
+    ).length;
+    const pending = data.send_queue.filter(q =>
+      q.campaign_id === campaignId && (q.status === 'pending' || q.status === 'sending')
+    ).length;
+
+    camp.failed_count = remainingFailed;
+    if (pending > 0) {
+      camp.status = 'sending';
+      camp.completed_at = null;
+      if (!camp.started_at) camp.started_at = now();
+    }
+
+    return {
+      campaignId,
+      alreadySentSkipped,
+      alreadySentCount: sentEmails.size,
+      sentCount: camp.sent_count || 0,
+      requeued,
+      restoredContacts,
+      permanentSkipped,
+      pending,
+      failedRemaining: remainingFailed,
+    };
   });
 }
 
@@ -1409,7 +1530,7 @@ module.exports = {
   suppressContact, getSentEmailsForList,
   getCampaigns, getCampaign, createCampaign, updateCampaign, setCampaignStatus, getCampaignsByStatus,
   queueCampaign, getPendingQueue, claimNextPending, releaseSendingItems, getPendingCount, getQueueRetries, requeueItem, bumpQueueItemToEnd, deferQueueItem,
-  requeueFailedActiveForAccount, restoreTransientBlockedContacts,
+  requeueFailedActiveForAccount, restoreTransientBlockedContacts, retryFailedCampaign,
   deferBlockedQueueItems, getAccountQuotaState, setAccountQuotaState,
   pauseAllCampaigns, pauseCampaignsForAccount,
   markSent, markFailed, markQueueSkippedDuplicate, purgeDuplicatePendingQueue, wasEmailSentGlobally, updateCampaignStatuses,
